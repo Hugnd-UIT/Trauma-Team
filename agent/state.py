@@ -44,9 +44,11 @@ def update(file_name, status, chain=None):
             done.append(file_name)
         if file_name in failed:
             failed.remove(file_name)
-    elif status == "fail":
+    elif status in ["fail", "failed"]:
         if file_name not in failed:
             failed.append(file_name)
+        if file_name in done:
+            done.remove(file_name)
 
     tree["done"] = done
     tree["failed"] = failed

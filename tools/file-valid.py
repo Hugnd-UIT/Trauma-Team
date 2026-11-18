@@ -4,6 +4,7 @@ import json
 import io
 import struct
 import zipfile
+import zlib
 
 
 def check_brackets(text):
@@ -142,6 +143,29 @@ def validate_png(content):
         return False, "Invalid PNG signature"
     if b"IEND" not in raw:
         return False, "Missing PNG IEND chunk"
+    pos = 8
+    idat_parts = []
+    while pos + 8 <= len(raw):
+        length, ctype = struct.unpack(">I4s", raw[pos:pos+8])
+        pos += 8
+        if pos + length + 4 > len(raw):
+            return False, f"Truncated PNG chunk data for {ctype}"
+        cdata = raw[pos:pos+length]
+        pos += length
+        crc = struct.unpack(">I", raw[pos:pos+4])[0]
+        pos += 4
+        calc_crc = zlib.crc32(ctype + cdata) & 0xFFFFFFFF
+        if crc != calc_crc:
+            return False, f"PNG CRC mismatch in {ctype.decode('ascii', errors='ignore')} chunk"
+        if ctype == b"IDAT":
+            idat_parts.append(cdata)
+        elif ctype == b"IEND":
+            break
+    if idat_parts:
+        try:
+            zlib.decompress(b"".join(idat_parts))
+        except Exception as e:
+            return False, f"Corrupted PNG image stream: {e}"
     return True, None
 
 

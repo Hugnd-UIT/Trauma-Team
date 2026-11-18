@@ -62,16 +62,18 @@ def find_candidates(disk, current_cluster, data_lba, sectors_per_cluster, bytes_
         if not raw_cluster_bytes or raw_cluster_bytes[:4] == b"\x00\x00\x00\x00":
             continue
 
-        # Fast printable ASCII density screening on initial sample bytes
-        sample = raw_cluster_bytes[:64]
-        ascii_chars = sum(1 for byte_val in sample if 32 <= byte_val <= 126 or byte_val in (10, 13, 9))
+        stripped_cluster_bytes = raw_cluster_bytes.rstrip(b"\x00")
+        if not stripped_cluster_bytes:
+            continue
+
+        sample = stripped_cluster_bytes[:64]
+        ascii_chars = sum(1 for byte_val in sample if 32 <= byte_val <= 126 or byte_val in [10, 13, 9])
         if ascii_chars / len(sample) < 0.70:
             continue
 
-        # Filter clusters within typical source code Shannon entropy range: 3.2 to 6.5
-        cluster_entropy = entropy(raw_cluster_bytes)
-        if 3.2 <= cluster_entropy <= 6.5:
-            preview_text = "".join(chr(b) if 32 <= b <= 126 else " " for b in raw_cluster_bytes[:80]).strip()
+        cluster_entropy = entropy(stripped_cluster_bytes)
+        if 2.5 <= cluster_entropy <= 7.0:
+            preview_text = "".join(chr(b) if 32 <= b <= 126 else " " for b in stripped_cluster_bytes[:80]).strip()
             candidates.append({"cluster": cluster_id, "entropy": round(cluster_entropy, 2), "preview": preview_text})
             if len(candidates) >= limit:
                 break

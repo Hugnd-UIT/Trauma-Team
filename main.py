@@ -121,18 +121,21 @@ def recover_fat_multi(disk, item, info, bot, log):
             c = args.get("cluster")
             if isinstance(c, int) and c not in chain:
                 val_res = file_valid.execute(disk, info, {"chain": chain + [c], "lang": lang}, needed=needed)
-                if "VALID" in val_res:
+                if " is VALID" in val_res and "INVALID" not in val_res:
                     obs += f"\nValidation check: cluster {c} connects cleanly with chain {chain}. To confirm, call file_valid with chain {chain + [c]}."
                 else:
                     obs += f"\nValidation warning: cluster {c} failed syntax verification: {val_res}"
         elif tool in ["file_valid", "validate_file", "validate"]:
             obs = file_valid.execute(disk, info, args, default_lang=lang, target_size=size, needed=needed)
-            if "VALID" in obs:
+            if " is VALID" in obs and "INVALID" not in obs:
                 chain_arg = args.get("chain", [])
                 if isinstance(chain_arg, list) and len(chain_arg) > len(chain):
                     if chain_arg[:len(chain)] == chain:
                         chain = list(chain_arg)
                         log.info(f"Observation: Cluster confirmed, chain updated -> {chain}")
+            else:
+                log.info(f"Observation: Cluster rejected or invalid. Current chain remains: {chain}")
+                obs += f"\nCandidate cluster rejected. Chain remains {chain}. Please inspect other clusters."
         elif tool in ["file_export", "export_file", "export", "save"]:
             obs = file_export.execute(disk, info, args, fallback_name=name, fallback_size=size)
             log.info(f"Observation: {obs}")
@@ -163,12 +166,19 @@ def recover_fat_multi(disk, item, info, bot, log):
             is_valid, err = file_valid.validate(test_payload, lang)
             if is_valid:
                 return test_payload, chain
+            else:
+                bad_cluster = chain.pop()
+                log.info(f"Validation failed for complete chain with cluster {bad_cluster}: {err}. Rolling back to chain {chain}.")
+                obs += f"\nValidation check failed for complete file: {err}. Cluster {bad_cluster} rolled back. Chain is now {chain}. Try another candidate."
 
     final_payload = b"".join(
         disk.cluster(cid, data_lba, sectors_per_cluster, bytes_per_sector)
         for cid in chain
     )[:size]
-    return final_payload, chain
+    is_valid, _ = file_valid.validate(final_payload, lang)
+    if is_valid and len(chain) == needed:
+        return final_payload, chain
+    return b"", []
 
 
 def load_env():
@@ -179,6 +189,19 @@ def load_env():
                 if line and not line.startswith("#") and "=" in line:
                     key, value = line.split("=", 1)
                     os.environ.setdefault(key.strip(), value.strip())
+
+
+def save_info_report(img_path, info, items, results):
+    os.makedirs("outputs", exist_ok=True)
+    report_path = os.path.join("outputs", "info.json")
+    with open(report_path, "w", encoding="utf-8") as file_pointer:
+        json.dump({
+            "image": img_path,
+            "fs": info,
+            "total_items": len(items),
+            "recovered_count": len(results),
+            "recovered_files": results
+        }, file_pointer, indent=2)
 
 
 def run(img_path):
@@ -205,6 +228,7 @@ def run(img_path):
         deleted_files = [item for item in items if item.get("deleted") and not item.get("is_dir")]
         bot = LLM()
         results = []
+        save_info_report(img_path, info, items, results)
 
         for item in deleted_files:
             name = item["name"]
@@ -246,30 +270,26 @@ def run(img_path):
             if not chain or not payload:
                 log.info("[!] FAILED: Unrecoverable!")
                 state.update(name, "failed", chain=[])
+                save_info_report(img_path, info, items, results)
                 continue
 
             valid, err = file_valid.validate(payload, lang)
             if not valid:
-                log.info(f"Error: file_valid check warning: {err}")
+                log.info(f"[!] FAILED: AST verification failed: {err}")
+                state.update(name, "failed", chain=chain)
+                save_info_report(img_path, info, items, results)
+                continue
             else:
-                log.info(f"[+] Done. AST verified: PASSED 100% - {lang} grammar valid")
+                log.info(f"[+] Done. Verified: PASSED 100% - {lang} grammar valid")
 
             res = file_export.save(payload, name, size=size, chain=chain)
             state.update(name, "done", chain=chain)
             results.append(res)
             log.info(f"Saved -> {res['path']}")
             log.info(f"SHA-256: {res['sha256']}")
+            save_info_report(img_path, info, items, results)
 
-        report_path = os.path.join("outputs", "info.json")
-        with open(report_path, "w", encoding="utf-8") as file_pointer:
-            json.dump({
-                "image": img_path,
-                "fs": info,
-                "total_items": len(items),
-                "recovered_count": len(results),
-                "recovered_files": results
-            }, file_pointer, indent=2)
-
+        save_info_report(img_path, info, items, results)
         log.info("=== MISSION COMPLETE ===")
         log.info(f"[+] Done. Files recovered: {len(results)} / {len(deleted_files)}")
 
