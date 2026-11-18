@@ -77,6 +77,7 @@ def recover_fat_multi(disk, item, info, bot, log):
 
     step = 0
     max_steps = max(25, needed * 4)
+    recent_actions = []
 
     while step < max_steps and len(chain) < needed:
         step += 1
@@ -109,13 +110,19 @@ def recover_fat_multi(disk, item, info, bot, log):
             tool = "hex_search"
             args = {"cluster": chain[-1], "radius": 50}
 
+        action_key = f"{tool}:{json.dumps(args, sort_keys=True)}"
+        recent_actions.append(action_key)
+        loop_alert = ""
+        if len(recent_actions) >= 2 and recent_actions[-1] == recent_actions[-2]:
+            loop_alert = f"\nNotice: Repeated action {tool} detected. Inspect candidate clusters directly with disk_read or file_valid."
+
         if thought:
             log.info(f"Thought: {thought}")
         log.info(f"Action: {tool}{args}")
 
         obs = ""
         if tool in ["hex_search", "search_hex", "search"]:
-            obs = hex_search.execute(disk, info, args, chain=chain)
+            obs = hex_search.execute(disk, info, args, chain=chain, lang=lang) + loop_alert
         elif tool in ["disk_read", "read_cluster", "read"]:
             obs = disk_read.execute(disk, info, args, chain=chain)
             c = args.get("cluster")
@@ -126,20 +133,35 @@ def recover_fat_multi(disk, item, info, bot, log):
                 else:
                     obs += f"\nValidation warning: cluster {c} failed syntax verification: {val_res}"
         elif tool in ["file_valid", "validate_file", "validate"]:
-            obs = file_valid.execute(disk, info, args, default_lang=lang, target_size=size, needed=needed)
+            tool_lang = args.get("lang") or lang
+            obs = file_valid.execute(disk, info, args, default_lang=tool_lang, target_size=size, needed=needed)
             if " is VALID" in obs and "INVALID" not in obs:
                 chain_arg = args.get("chain", [])
                 if isinstance(chain_arg, list) and len(chain_arg) > len(chain):
                     if chain_arg[:len(chain)] == chain:
                         chain = list(chain_arg)
+                        lang = tool_lang
                         log.info(f"Observation: Cluster confirmed, chain updated -> {chain}")
             else:
                 log.info(f"Observation: Cluster rejected or invalid. Current chain remains: {chain}")
                 obs += f"\nCandidate cluster rejected. Chain remains {chain}. Please inspect other clusters."
+        
         elif tool in ["file_export", "export_file", "export", "save"]:
-            obs = file_export.execute(disk, info, args, fallback_name=name, fallback_size=size)
-            log.info(f"Observation: {obs}")
-            break
+            chain_arg = args.get("chain", chain)
+            export_lang = args.get("lang") or lang
+            test_payload = b"".join(
+                disk.cluster(cid, data_lba, sectors_per_cluster, bytes_per_sector)
+                for cid in chain_arg
+            )[:size]
+            is_valid, err = file_valid.validate(test_payload, export_lang)
+            if is_valid and len(chain_arg) == needed:
+                chain = list(chain_arg)
+                lang = export_lang
+                log.info(f"Observation: Chain {chain} verified 100% for export.")
+                return test_payload, chain
+            else:
+                obs = f"Validation failed for export: {err}. Chain {chain_arg} is invalid. Current chain remains {chain}. Continue searching."
+                log.info(f"Observation: {obs}")
         else:
             obs = f"Unknown tool: {tool}. Available tools: hex_search, disk_read, file_valid, file_export."
 

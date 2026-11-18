@@ -194,6 +194,8 @@ def validate(content, lang):
     if lang in ("zip", "docx", "xlsx", "pptx"):
         return validate_zip(raw)
     elif lang in ("ole", "doc", "xls", "ppt"):
+        if raw.startswith(b"PK\x03\x04"):
+            return validate_zip(raw)
         return validate_ole(raw)
     elif lang == "png":
         return validate_png(raw)
