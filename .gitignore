@@ -23,9 +23,7 @@ venv/
 *.raw
 
 # Runtime Outputs & Recovered Files
-outputs/recovered/*
-outputs/*.json
-!outputs/.gitkeep
+outputs/
 
 # IDE & OS Junk
 .vscode/

@@ -24,6 +24,8 @@ def format_record(record):
         return f"{BLUE}{raw}{RESET}"
 
     stripped = raw.strip()
+    if not stripped:
+        return ""
     if stripped.startswith("📁") or stripped.startswith("├──") or stripped.startswith("│") or stripped.startswith("└──"):
         return raw
 
@@ -91,6 +93,8 @@ def setup_logger(log_file=None):
             if raw.startswith("╔") or raw.startswith("║") or raw.startswith("╚"):
                 return raw
             stripped = raw.strip()
+            if not stripped:
+                return ""
             if stripped.startswith("📁") or stripped.startswith("├──") or stripped.startswith("│") or stripped.startswith("└──"):
                 return raw
             time_str = logging.Formatter().formatTime(rec, "%H:%M:%S")
