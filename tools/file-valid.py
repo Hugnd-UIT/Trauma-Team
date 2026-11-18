@@ -1,5 +1,6 @@
 import ast
 import re
+import json
 
 
 def check_brackets(text):
@@ -60,6 +61,54 @@ def validate_cs(code_str):
     return True, None
 
 
+def validate_rust(code_str):
+    ok, err = check_brackets(code_str)
+    if not ok:
+        return False, err
+    has_keywords = bool(re.search(r"\b(fn|let|mut|struct|enum|impl|pub|match|use|mod|trait|unsafe|where|type)\b", code_str))
+    if not has_keywords:
+        return False, "Missing Rust language keywords"
+    return True, None
+
+
+def validate_go(code_str):
+    ok, err = check_brackets(code_str)
+    if not ok:
+        return False, err
+    has_keywords = bool(re.search(r"\b(package|import|func|type|struct|interface|var|const|chan|defer|go|select|return)\b", code_str))
+    if not has_keywords:
+        return False, "Missing Go language keywords"
+    return True, None
+
+
+def validate_js(code_str):
+    ok, err = check_brackets(code_str)
+    if not ok:
+        return False, err
+    has_keywords = bool(re.search(r"\b(function|const|let|var|return|import|export|class|async|await|interface|type)\b", code_str))
+    if not has_keywords:
+        return False, "Missing JavaScript or TypeScript language keywords"
+    return True, None
+
+
+def validate_java(code_str):
+    ok, err = check_brackets(code_str)
+    if not ok:
+        return False, err
+    has_keywords = bool(re.search(r"\b(package|import|public|class|interface|private|protected|static|final|void|return|new)\b", code_str))
+    if not has_keywords:
+        return False, "Missing Java language keywords"
+    return True, None
+
+
+def validate_json(code_str):
+    try:
+        json.loads(code_str)
+        return True, None
+    except Exception as e:
+        return False, f"JSON syntax error: {e}"
+
+
 def validate(content, lang):
     text = content.decode("utf-8", errors="ignore") if isinstance(content, bytes) else str(content)
     lang = lang.lower().lstrip(".")
@@ -70,6 +119,16 @@ def validate(content, lang):
         return validate_c(text)
     elif lang == "cs":
         return validate_cs(text)
+    elif lang in ("rs", "rust"):
+        return validate_rust(text)
+    elif lang in ("go", "golang"):
+        return validate_go(text)
+    elif lang in ("js", "jsx", "ts", "tsx"):
+        return validate_js(text)
+    elif lang == "java":
+        return validate_java(text)
+    elif lang == "json":
+        return validate_json(text)
 
     # Default validation fallback for generic plain text files
     return True, None

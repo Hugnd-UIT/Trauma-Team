@@ -18,6 +18,7 @@ def save(data, filename, size=None, out_dir="outputs/recovered", chain=None):
 
     # Update outputs/chain.json
     chain_path = os.path.join("outputs", "chain.json")
+    os.makedirs(os.path.dirname(chain_path), exist_ok=True)
     chains = {}
     if os.path.exists(chain_path) and os.path.getsize(chain_path) > 0:
         try:

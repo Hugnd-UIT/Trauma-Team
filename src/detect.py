@@ -17,6 +17,7 @@ def parse(raw):
     # Check NTFS
     if "NTFS" in oem:
         mft_cluster = struct.unpack_from("<q", raw, 0x30)[0]
+        mftmirr_cluster = struct.unpack_from("<q", raw, 0x38)[0]
         return {
             "fs": "NTFS",
             "oem": oem,
@@ -24,7 +25,9 @@ def parse(raw):
             "spc": spc,
             "csize": csize,
             "mft_cluster": mft_cluster,
-            "mft_lba": mft_cluster * spc
+            "mft_lba": mft_cluster * spc,
+            "mftmirr_cluster": mftmirr_cluster,
+            "mftmirr_lba": mftmirr_cluster * spc
         }
 
     # Check FAT32

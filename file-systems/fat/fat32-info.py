@@ -1,6 +1,18 @@
 import struct
 
-CODE_EXTS = {".c": "c", ".cpp": "cpp", ".cs": "cs", ".py": "py", ".h": "c"}
+CODE_EXTS = {
+    ".c": "c",
+    ".cpp": "cpp",
+    ".cs": "cs",
+    ".py": "py",
+    ".h": "c",
+    ".rs": "rs",
+    ".go": "go",
+    ".js": "js",
+    ".ts": "ts",
+    ".java": "java",
+    ".json": "json"
+}
 
 
 def decode_lfn(entry):

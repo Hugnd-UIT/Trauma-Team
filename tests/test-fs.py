@@ -26,6 +26,8 @@ class DummyDisk:
         return self.total_size
 
     def read(self, offset, size=512):
+        if isinstance(self.data_dict, (bytes, bytearray)):
+            return bytes(self.data_dict[offset:offset + size])
         if offset in self.data_dict:
             return self.data_dict[offset][:size]
         return b"\x00" * size
@@ -112,6 +114,29 @@ class TestFileSystems(unittest.TestCase):
         decoded_runs = ntfs_info.decode_runs(raw_runs, 0, len(raw_runs))
         self.assertEqual(len(decoded_runs), 1)
         self.assertEqual(decoded_runs[0], (4, 16))
+
+    def test_ntfs_orphaned_carving(self):
+        disk_bytes = bytearray(4096)
+        rec = bytearray(1024)
+        rec[:4] = b"FILE"
+        struct.pack_into("<H", rec, 0x14, 0x30)
+        struct.pack_into("<H", rec, 0x16, 0x01)
+        fn_name = "server.c"
+        fn_len = len(fn_name)
+        total_fn_len = 0x18 + 0x42 + fn_len * 2
+        fn_data = bytearray(total_fn_len)
+        struct.pack_into("<II", fn_data, 0, 0x30, total_fn_len)
+        struct.pack_into("<H", fn_data, 0x14, 0x18)
+        fn_data[0x18 + 0x40] = fn_len
+        fn_data[0x18 + 0x41] = 0x01
+        for i, c in enumerate(fn_name):
+            fn_data[0x18 + 0x42 + i * 2:0x18 + 0x42 + i * 2 + 2] = c.encode("utf-16le")
+        rec[0x30:0x30 + total_fn_len] = fn_data
+        disk_bytes[1024:2048] = rec
+        dummy = DummyDisk(bytes(disk_bytes))
+        records = ntfs_info.scan(dummy, {"fs": "NTFS", "bps": 512, "mft_lba": 9999})
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["name"], "server.c")
 
     def test_router_dispatch(self):
         dummy_disk = DummyDisk({})
