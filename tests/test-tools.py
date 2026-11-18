@@ -4,6 +4,9 @@ import shutil
 import hashlib
 import unittest
 import importlib
+import io
+import struct
+import zipfile
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
@@ -93,6 +96,34 @@ class TestTools(unittest.TestCase):
         expected_slice = test_payload[:target_size]
         expected_sha = hashlib.sha256(expected_slice).hexdigest()
         self.assertEqual(result.get("sha256"), expected_sha)
+
+    def test_binary_format_validation(self):
+        bio = io.BytesIO()
+        with zipfile.ZipFile(bio, "w") as zf:
+            zf.writestr("word/document.xml", "<w:p>test</w:p>")
+        docx_bytes = bio.getvalue()
+        ok_zip, _ = file_valid.validate_zip(docx_bytes)
+        self.assertTrue(ok_zip)
+        ok_docx, _ = file_valid.validate(docx_bytes, "docx")
+        self.assertTrue(ok_docx)
+
+        png_bytes = b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 0) + b"IEND\xaeB`\x82"
+        ok_png, _ = file_valid.validate_png(png_bytes)
+        self.assertTrue(ok_png)
+
+        jpg_bytes = b"\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xFF\xD9"
+        ok_jpg, _ = file_valid.validate_jpg(jpg_bytes)
+        self.assertTrue(ok_jpg)
+
+        pdf_bytes = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n"
+        ok_pdf, _ = file_valid.validate_pdf(pdf_bytes)
+        self.assertTrue(ok_pdf)
+
+        ole_bytes = bytearray(1024)
+        ole_bytes[:8] = b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1"
+        struct.pack_into("<H", ole_bytes, 0x1E, 9)
+        ok_ole, _ = file_valid.validate_ole(bytes(ole_bytes))
+        self.assertTrue(ok_ole)
 
 
 if __name__ == "__main__":

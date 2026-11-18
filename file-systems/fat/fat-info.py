@@ -11,7 +11,18 @@ CODE_EXTS = {
     ".js": "js",
     ".ts": "ts",
     ".java": "java",
-    ".json": "json"
+    ".json": "json",
+    ".png": "png",
+    ".jpg": "jpg",
+    ".jpeg": "jpg",
+    ".doc": "doc",
+    ".xls": "xls",
+    ".ppt": "ppt",
+    ".docx": "docx",
+    ".xlsx": "xlsx",
+    ".pptx": "pptx",
+    ".pdf": "pdf",
+    ".zip": "zip"
 }
 
 

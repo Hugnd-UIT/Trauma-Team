@@ -215,7 +215,12 @@ def run(img_path):
 
             log.info(f"=== Processing: {name} - {size} bytes - lang: {lang} ===")
 
-            if item.get("resident") and item.get("resident_data") is not None:
+            if item.get("carved") and item.get("payload") is not None:
+                payload = item["payload"]
+                chain = [item.get("cluster", 0)]
+                log.info(f"Method: Binary raw carve - {lang}")
+
+            elif item.get("resident") and item.get("resident_data") is not None:
                 payload = item["resident_data"][:size]
                 chain = ["Resident"]
                 log.info("Method: NTFS single cluster")

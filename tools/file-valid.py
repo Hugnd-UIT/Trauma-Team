@@ -1,6 +1,9 @@
 import ast
 import re
 import json
+import io
+import struct
+import zipfile
 
 
 def check_brackets(text):
@@ -109,9 +112,73 @@ def validate_json(code_str):
         return False, f"JSON syntax error: {e}"
 
 
+def validate_zip(content):
+    raw = content if isinstance(content, (bytes, bytearray)) else content.encode("utf-8", errors="ignore")
+    if len(raw) < 22 or not raw.startswith(b"PK\x03\x04"):
+        return False, "Invalid ZIP header"
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            bad_file = zf.testzip()
+            if bad_file is not None:
+                return False, f"Corrupted file inside archive: {bad_file}"
+            return True, None
+    except Exception as e:
+        return False, f"ZIP validation error: {e}"
+
+
+def validate_ole(content):
+    raw = content if isinstance(content, (bytes, bytearray)) else content.encode("utf-8", errors="ignore")
+    if len(raw) < 512 or not raw.startswith(b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1"):
+        return False, "Invalid OLE2 compound file header"
+    sector_shift = struct.unpack_from("<H", raw, 0x1E)[0]
+    if sector_shift not in (9, 12):
+        return False, "Invalid OLE2 sector shift"
+    return True, None
+
+
+def validate_png(content):
+    raw = content if isinstance(content, (bytes, bytearray)) else content.encode("utf-8", errors="ignore")
+    if len(raw) < 16 or not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return False, "Invalid PNG signature"
+    if b"IEND" not in raw:
+        return False, "Missing PNG IEND chunk"
+    return True, None
+
+
+def validate_jpg(content):
+    raw = content if isinstance(content, (bytes, bytearray)) else content.encode("utf-8", errors="ignore")
+    if len(raw) < 4 or not raw.startswith(b"\xFF\xD8\xFF"):
+        return False, "Invalid JPEG SOI header"
+    if b"\xFF\xD9" not in raw:
+        return False, "Missing JPEG EOI marker"
+    return True, None
+
+
+def validate_pdf(content):
+    raw = content if isinstance(content, (bytes, bytearray)) else content.encode("utf-8", errors="ignore")
+    if len(raw) < 8 or not raw.startswith(b"%PDF-"):
+        return False, "Invalid PDF header"
+    if b"%%EOF" not in raw:
+        return False, "Missing PDF EOF marker"
+    return True, None
+
+
 def validate(content, lang):
-    text = content.decode("utf-8", errors="ignore") if isinstance(content, bytes) else str(content)
+    raw = content if isinstance(content, (bytes, bytearray)) else str(content).encode("utf-8", errors="ignore")
     lang = lang.lower().lstrip(".")
+
+    if lang in ("zip", "docx", "xlsx", "pptx"):
+        return validate_zip(raw)
+    elif lang in ("ole", "doc", "xls", "ppt"):
+        return validate_ole(raw)
+    elif lang == "png":
+        return validate_png(raw)
+    elif lang in ("jpg", "jpeg"):
+        return validate_jpg(raw)
+    elif lang == "pdf":
+        return validate_pdf(raw)
+
+    text = raw.decode("utf-8", errors="ignore")
 
     if lang == "py":
         return validate_python(text)
