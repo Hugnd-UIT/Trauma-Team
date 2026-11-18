@@ -1,0 +1,611 @@
+PS C:\Users\ASUS\Downloads\Trauma Team> python main.py test.img
+
+╔═════════════════════════════════════════════════════════════════════╗
+║  ▄         ██████         ▄                                         ║
+║  ██▄▄      ██████       ▄██                                         ║
+║  █████▄    ██████    ▄█████    █████ ████▄ ▄███▄ █   █ █   █ ▄███▄  ║
+║  ████████▄ ██████ ▄▄███████      █   █   █ █   █ █   █ ██ ██ █   █  ║
+║   ▀▀█████████████████████▀       █   ████▀ █████ █   █ █ █ █ █████  ║
+║      ▀████████████████▀          █   █  ▀▄ █   █ █   █ █   █ █   █  ║
+║         ▀██████████▀▀            █   █   █ █   █ ▀███▀ █   █ █   █  ║
+║         ▄██████████▄▄                                               ║
+║      ▄████████████████▄           █████   █████   ▄███▄   █   █     ║
+║   ▄▄█████████████████████▄          █     █       █   █   ██ ██     ║
+║  ████████▀ ██████ ▀▀███████         █     ████    █████   █ █ █     ║
+║  █████▀    ██████    ▀█████         █     █       █   █   █   █     ║
+║  ██▀▀      ██████       ▀██         █     █████   █   █   █   █     ║
+║  ▀         ██████         ▀                                         ║
+╚═════════════════════════════════════════════════════════════════════╝
+
+[23:48:59] Image: test.img
+
+[23:48:59] File system: FAT32
+
+[23:48:59] Directory: 8
+📁 /
+├── System Volume Information [ACTIVE] 0 B
+│   │
+│   └── WPSettings.dat [ACTIVE] 12 B
+│
+├── 1_LEAD.TXT [ACTIVE] 482 B 
+│
+├── _HOLE.TXT [DELETED] 1.1 KB 
+│
+├── 3_blocker.txt [ACTIVE] 1.3 KB 
+│
+├── _RVER.C [DELETED] 7.6 KB 
+│
+└── 📁 $RECYCLE.BIN/
+    │
+    └── DESKTOP.INI [ACTIVE] 129 B
+
+[23:48:59] === Processing: _HOLE.TXT - 1140 bytes - lang: txt ===
+
+[23:48:59] Method: FAT multi clusters
+
+[23:48:59] Starting cluster 6 is zeroed out. Skipping.
+
+[23:48:59] Final chain: []
+
+[23:48:59] [!] FAILED: Unrecoverable!
+
+[23:48:59] Saved -> outputs/recovered\HOLE.TXT
+
+[23:48:59] SHA-256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+[23:48:59] === Processing: _RVER.C - 7825 bytes - lang: c ===
+
+[23:48:59] Method: FAT multi clusters
+
+[23:51:09] Thought: The target file is _RVER.C (C source file), currently has cluster 12 as the first cluster. I need to find candidate clusters around cluster 12 to continue reconstructing the chain.
+
+[23:51:09] Action: hex_search{'cluster': 12, 'radius': 50}
+
+[23:51:09] Observation: Current chain from cluster 12:
+...^ (y * 31) + 100;
+    return accumulator % 65536;
+}
+
+int helper_routine_02(int x, int y) {
+    // Routine 02 perfor
+
+Found 8 candidate clusters:
+- Cluster 13: entropy=5.04 preview='<!DOCTYPE html> <html> <head><title>System Telemetry</title></head> <body> <div'
+- Cluster 14: entropy=4.48 preview='import os import sys import json  def aggregate_metrics(events):     summary = {'
+- Cluster 15: entropy=4.65 preview='ms matrix multiplication stage 2      int accumulator = (x * 17) ^ (y * 31) + 20'
+- Cluster 16: entropy=5.3 preview='-- Database Migration: 2026-11-18_audit_schema.sql CREATE TABLE IF NOT EXISTS au'
+- Cluster 17: entropy=4.79 preview='# Incident Post-Mortem Report ## Executive Summary On 2026-11-18 at 14:22 UTC, d'
+- Cluster 18: entropy=4.69 preview='mulator % 65536;  }    int helper_routine_08(int x, int y) {      // Routine 08'
+- Cluster 19: entropy=4.54 preview='{   "status": "healthy",   "uptime": 849204,   "nodes": [     {"id": "node-01",'
+- Cluster 20: entropy=4.87 preview='#!/usr/bin/env bash set -euo pipefail  echo '[*] Starting container health monit'
+
+[23:51:17] Thought: Cluster 12 ends with '// Routine 02 perfor'. Cluster 15 preview starts with 'ms matrix multiplication stage 2 int accumulator = (x * 17) ^ (y * 31) + 20', which directly completes '// Routine 02 performs matrix multiplication stage 2'. Let's read cluster 15 or validate [12, 15].
+
+[23:51:17] Action: file_valid{'chain': [12, 15], 'lang': 'c'}
+
+[23:51:17] Observation: Cluster confirmed, chain updated -> [12, 15]
+
+[23:51:17] Observation: Chain [12, 15] is VALID for c. Structural continuity verified.
+
+[23:53:29] Thought: Now we need the 3rd cluster. Let's read the tail of cluster 15 using disk_read or search from cluster 15.
+
+[23:53:29] Action: disk_read{'cluster': 15, 'size': 1024}
+
+[23:53:29] Observation: Cluster 15 content 1024 bytes:
+[Head]:
+ms matrix multiplication stage 2
+    int accumulator = (x * 17) ^ (y * 31) + 200;
+    return accumulator % 65536;
+}
+
+int helper_routine_03(int x, int y) {
+    // Routine 03 performs matrix multi
+[Tail]:
+    return accumulator % 65536;
+}
+
+int helper_routine_07(int x, int y) {
+    // Routine 07 performs matrix multiplication stage 7
+    int accumulator = (x * 17) ^ (y * 31) + 700;
+    return accu
+[Preview]:
+Tail of cluster 15: ...// Routine 07 performs matrix multiplication stage 7
+    int accumulator = (x * 17) ^ (y * 31) + 700;
+    return accu
+Head of cluster 15: ms matrix multiplication stage 2
+    int accumulator = (x * 17) ^ (y * 31) + 200;
+    return accumulator % 65536;
+}...
+Combined: ...// Routine 07 performs matrix multiplication stage 7
+    int accumulator = (x * 17) ^ (y * 31) + 700;
+    return accu ms matrix multiplication stage 2
+    int accumulator = (x * 17) ^ (y * 31) + 200;
+    return accumulator % 65536;
+}...
+
+[23:55:35] Thought: Tail of cluster 15 ends with 'return accu'. In the previous hex_search results, Cluster 18 preview started with: 'mulator % 65536; } int helper_routine_08(int x, int y) { // Routine 08'. This matches 'return accumulator % 65536;'! Let's validate [12, 15, 18].
+
+[23:55:35] Action: file_valid{'chain': [12, 15, 18], 'lang': 'c'}
+
+[23:55:35] Observation: Cluster confirmed, chain updated -> [12, 15, 18]
+
+[23:55:35] Observation: Chain [12, 15, 18] is VALID for c. Structural continuity verified.
+
+[23:55:38] Thought: Chain [12, 15, 18] is valid (3/8 clusters). Let's read cluster 18 to inspect its tail.
+
+[23:55:38] Action: disk_read{'cluster': 18, 'size': 1024}
+
+[23:55:38] Observation: Cluster 18 content 1024 bytes:
+[Head]:
+mulator % 65536;
+}
+
+int helper_routine_08(int x, int y) {
+    // Routine 08 performs matrix multiplication stage 8
+    int accumulator = (x * 17) ^ (y * 31) + 800;
+    return accumulator % 65536
+[Tail]:
+performs matrix multiplication stage 12
+    int accumulator = (x * 17) ^ (y * 31) + 1200;
+    return accumulator % 65536;
+}
+
+int helper_routine_13(int x, int y) {
+    // Routine 13 performs matr
+[Preview]:
+Tail of cluster 18: ...1) + 1200;
+    return accumulator % 65536;
+}
+
+int helper_routine_13(int x, int y) {
+    // Routine 13 performs matr
+Head of cluster 18: mulator % 65536;
+}
+
+int helper_routine_08(int x, int y) {
+    // Routine 08 performs matrix multiplication stage 8...
+Combined: ...1) + 1200;
+    return accumulator % 65536;
+}
+
+int helper_routine_13(int x, int y) {
+    // Routine 13 performs matr mulator % 65536;
+}
+
+int helper_routine_08(int x, int y) {
+    // Routine 08 performs matrix multiplication stage 8...
+
+[23:56:09] Thought: Tail of cluster 18 ends with '// Routine 13 performs matr'. Now search around cluster 18 for candidate clusters.
+
+[23:56:09] Action: hex_search{'cluster': 18, 'radius': 50}
+
+[23:56:09] Observation: Current chain from cluster 18:
+...1) + 1200;
+    return accumulator % 65536;
+}
+
+int helper_routine_13(int x, int y) {
+    // Routine 13 performs matr
+
+Found 8 candidate clusters:
+- Cluster 19: entropy=4.54 preview='{   "status": "healthy",   "uptime": 849204,   "nodes": [     {"id": "node-01",'
+- Cluster 20: entropy=4.87 preview='#!/usr/bin/env bash set -euo pipefail  echo '[*] Starting container health monit'
+- Cluster 21: entropy=4.46 preview='// Graphics rendering pipeline - Vertex shader transform void compute_mvp_matrix'
+- Cluster 22: entropy=4.66 preview='ix multiplication stage 13      int accumulator = (x * 17) ^ (y * 31) + 1300;'
+- Cluster 23: entropy=5.04 preview='<!DOCTYPE html> <html> <head><title>System Telemetry</title></head> <body> <div'
+- Cluster 24: entropy=4.48 preview='import os import sys import json  def aggregate_metrics(events):     summary = {'
+- Cluster 25: entropy=5.3 preview='-- Database Migration: 2026-11-18_audit_schema.sql CREATE TABLE IF NOT EXISTS au'
+- Cluster 26: entropy=4.7 preview='accumulator % 65536;  }    int helper_routine_19(int x, int y) {      // Routin'
+
+[23:56:51] Thought: Tail of cluster 18 ends with '// Routine 13 performs matr'. Cluster 22 starts with 'ix multiplication stage 13 int accumulator = (x * 17) ^ (y * 31) + 1300;', which matches perfectly! Notice the stride: 12 (+3) -> 15 (+3) -> 18 (+4) -> 22 (+4)? Let's test cluster 22.
+
+[23:56:51] Action: file_valid{'chain': [12, 15, 18, 22], 'lang': 'c'}
+
+[23:56:51] Observation: Cluster confirmed, chain updated -> [12, 15, 18, 22]
+
+[23:56:51] Observation: Chain [12, 15, 18, 22] is VALID for c. Structural continuity verified.
+
+[23:57:22] Thought: Chain [12, 15, 18, 22] is valid (4/8 clusters). Let's read the tail of cluster 22 to see what it ends with.
+
+[23:57:22] Action: disk_read{'cluster': 22, 'size': 1024}
+
+[23:57:22] Observation: Cluster 22 content 1024 bytes:
+[Head]:
+ix multiplication stage 13
+    int accumulator = (x * 17) ^ (y * 31) + 1300;
+    return accumulator % 65536;
+}
+
+int helper_routine_14(int x, int y) {
+    // Routine 14 performs matrix multiplica
+[Tail]:
+;
+    return accumulator % 65536;
+}
+
+int helper_routine_18(int x, int y) {
+    // Routine 18 performs matrix multiplication stage 18
+    int accumulator = (x * 17) ^ (y * 31) + 1800;
+    return
+[Preview]:
+Tail of cluster 22: ...// Routine 18 performs matrix multiplication stage 18
+    int accumulator = (x * 17) ^ (y * 31) + 1800;
+    return
+Head of cluster 22: ix multiplication stage 13
+    int accumulator = (x * 17) ^ (y * 31) + 1300;
+    return accumulator % 65536;
+}
+
+int...
+Combined: ...// Routine 18 performs matrix multiplication stage 18
+    int accumulator = (x * 17) ^ (y * 31) + 1800;
+    return ix multiplication stage 13
+    int accumulator = (x * 17) ^ (y * 31) + 1300;
+    return accumulator % 65536;
+}
+
+int...
+
+[23:57:22] === Seam Progress: 4/8 clusters | Target: _RVER.C ===
+
+[23:57:22] Waiting for LLM reasoning...
+
+[23:57:27] Thought: Tail of cluster 22 ends with 'return '. In the previous hex_search results from cluster 18: Cluster 26 preview was 'accumulator % 65536; } int helper_routine_19(int x, int y) { // Routin'. This directly completes 'return accumulator % 65536;'! Let's validate [12, 15, 18, 22, 26].
+
+[23:57:27] Action: file_valid{'chain': [12, 15, 18, 22, 26], 'lang': 'c'}
+
+[23:57:27] Observation: Cluster confirmed, chain updated -> [12, 15, 18, 22, 26]
+
+[23:57:27] Observation: Chain [12, 15, 18, 22, 26] is VALID for c. Structural continuity verified.
+
+[23:57:27] === Seam Progress: 5/8 clusters | Target: _RVER.C ===
+
+[23:57:27] Waiting for LLM reasoning...
+
+[23:58:13] Thought: Chain [12, 15, 18, 22, 26] is valid (5/8 clusters). Let's read the tail of cluster 26.
+
+[23:58:13] Action: disk_read{'cluster': 26, 'size': 1024}
+
+[23:58:13] Observation: Cluster 26 content 1024 bytes:
+[Head]:
+ accumulator % 65536;
+}
+
+int helper_routine_19(int x, int y) {
+    // Routine 19 performs matrix multiplication stage 19
+    int accumulator = (x * 17) ^ (y * 31) + 1900;
+    return accumulator
+[Tail]:
+utine 23 performs matrix multiplication stage 23
+    int accumulator = (x * 17) ^ (y * 31) + 2300;
+    return accumulator % 65536;
+}
+
+int helper_routine_24(int x, int y) {
+    // Routine 24 perf
+[Preview]:
+Tail of cluster 26: ...^ (y * 31) + 2300;
+    return accumulator % 65536;
+}
+
+int helper_routine_24(int x, int y) {
+    // Routine 24 perf
+Head of cluster 26: accumulator % 65536;
+}
+
+int helper_routine_19(int x, int y) {
+    // Routine 19 performs matrix multiplication stag...
+Combined: ...^ (y * 31) + 2300;
+    return accumulator % 65536;
+}
+
+int helper_routine_24(int x, int y) {
+    // Routine 24 perf accumulator % 65536;
+}
+
+int helper_routine_19(int x, int y) {
+    // Routine 19 performs matrix multiplication stag...
+
+[23:58:13] === Seam Progress: 5/8 clusters | Target: _RVER.C ===
+
+[23:58:13] Waiting for LLM reasoning...
+
+[23:58:39] Thought: Tail of cluster 26 ends with '// Routine 24 perf'. Let's search around cluster 26.
+
+[23:58:39] Action: hex_search{'cluster': 26, 'radius': 50}
+
+[23:58:39] Observation: Current chain tail from cluster 26:
+...^ (y * 31) + 2300;
+    return accumulator % 65536;
+}
+
+int helper_routine_24(int x, int y) {
+    // Routine 24 perf
+
+Found 8 candidate cluster entries:
+- Cluster 27: entropy=4.79 preview='# Incident Post-Mortem Report ## Executive Summary On 2026-11-18 at 14:22 UTC, d'
+- Cluster 28: entropy=4.54 preview='{   "status": "healthy",   "uptime": 849204,   "nodes": [     {"id": "node-01",'
+- Cluster 29: entropy=4.87 preview='#!/usr/bin/env bash set -euo pipefail  echo '[*] Starting container health monit'
+- Cluster 30: entropy=4.7 preview='orms matrix multiplication stage 24      int accumulator = (x * 17) ^ (y * 31) +'
+- Cluster 31: entropy=4.46 preview='// Graphics rendering pipeline - Vertex shader transform void compute_mvp_matrix'
+- Cluster 32: entropy=5.04 preview='<!DOCTYPE html> <html> <head><title>System Telemetry</title></head> <body> <div'
+- Cluster 33: entropy=4.48 preview='import os import sys import json  def aggregate_metrics(events):     summary = {'
+- Cluster 34: entropy=5.3 preview='-- Database Migration: 2026-11-18_audit_schema.sql CREATE TABLE IF NOT EXISTS au'
+
+[23:58:39] === Seam Progress: 5/8 clusters | Target: _RVER.C ===
+
+[23:58:39] Waiting for LLM reasoning...
+
+[23:58:43] Thought: Cluster 30 preview starts with 'orms matrix multiplication stage 24 int accumulator = (x * 17) ^ (y * 31) +', completing '// Routine 24 performs matrix multiplication stage 24'. Let's validate chain [12, 15, 18, 22, 26, 30].
+
+[23:58:43] Action: file_valid{'chain': [12, 15, 18, 22, 26, 30], 'lang': 'c'}
+
+[23:58:43] Observation: Cluster confirmed, chain updated -> [12, 15, 18, 22, 26, 30]
+
+[23:58:43] Observation: Chain [12, 15, 18, 22, 26, 30] is VALID for c. Structural continuity verified.
+
+[23:58:43] === Seam Progress: 6/8 clusters | Target: _RVER.C ===
+
+[23:58:43] Waiting for LLM reasoning...
+
+[23:58:47] Thought: Chain [12, 15, 18, 22, 26, 30] is valid (6/8 clusters). Notice the pattern: 12 (+3) -> 15 (+3) -> 18 (+4) -> 22 (+4) -> 26 (+4) -> 30 (+4? -> 34?). Let's read the tail of cluster 30.
+
+[23:58:47] Action: disk_read{'cluster': 30, 'size': 1024}
+
+[23:58:47] Observation: Cluster 30 content 1024 bytes:
+[Head]:
+orms matrix multiplication stage 24
+    int accumulator = (x * 17) ^ (y * 31) + 2400;
+    return accumulator % 65536;
+}
+
+int helper_routine_25(int x, int y) {
+    // Routine 25 performs matrix m
+[Tail]:
+1) + 2800;
+    return accumulator % 65536;
+}
+
+int helper_routine_29(int x, int y) {
+    // Routine 29 performs matrix multiplication stage 29
+    int accumulator = (x * 17) ^ (y * 31) + 2900;
+
+[Preview]:
+Tail of cluster 30: ...nt y) {
+    // Routine 29 performs matrix multiplication stage 29
+    int accumulator = (x * 17) ^ (y * 31) + 2900;
+Head of cluster 30: orms matrix multiplication stage 24
+    int accumulator = (x * 17) ^ (y * 31) + 2400;
+    return accumulator % 65536;...
+Combined: ...nt y) {
+    // Routine 29 performs matrix multiplication stage 29
+    int accumulator = (x * 17) ^ (y * 31) + 2900; orms matrix multiplication stage 24
+    int accumulator = (x * 17) ^ (y * 31) + 2400;
+    return accumulator % 65536;...
+
+[23:58:47] === Seam Progress: 6/8 clusters | Target: _RVER.C ===
+
+[23:58:47] Waiting for LLM reasoning...
+
+[23:58:52] Thought: Tail of cluster 30 ends with 'int accumulator = (x * 17) ^ (y * 31) + 2900;\n '. Next should be 'return accumulator % 65536;\n}...'. Let's search around cluster 30.
+
+[23:58:52] Action: hex_search{'cluster': 30, 'radius': 50}
+
+[23:58:52] Observation: Current chain tail from cluster 30:
+...nt y) {
+    // Routine 29 performs matrix multiplication stage 29
+    int accumulator = (x * 17) ^ (y * 31) + 2900;
+
+Found 8 candidate cluster entries:
+- Cluster 31: entropy=4.46 preview='// Graphics rendering pipeline - Vertex shader transform void compute_mvp_matrix'
+- Cluster 32: entropy=5.04 preview='<!DOCTYPE html> <html> <head><title>System Telemetry</title></head> <body> <div'
+- Cluster 33: entropy=4.48 preview='import os import sys import json  def aggregate_metrics(events):     summary = {'
+- Cluster 34: entropy=5.3 preview='-- Database Migration: 2026-11-18_audit_schema.sql CREATE TABLE IF NOT EXISTS au'
+- Cluster 35: entropy=4.71 preview='return accumulator % 65536;  }    int helper_routine_30(int x, int y) {'
+- Cluster 36: entropy=4.79 preview='# Incident Post-Mortem Report ## Executive Summary On 2026-11-18 at 14:22 UTC, d'
+- Cluster 37: entropy=4.54 preview='{   "status": "healthy",   "uptime": 849204,   "nodes": [     {"id": "node-01",'
+- Cluster 38: entropy=4.87 preview='#!/usr/bin/env bash set -euo pipefail  echo '[*] Starting container health monit'
+
+[23:58:52] === Seam Progress: 6/8 clusters | Target: _RVER.C ===
+
+[23:58:52] Waiting for LLM reasoning...
+
+[23:59:58] Thought: Cluster 35 preview starts with 'return accumulator % 65536; } int helper_routine_30(int x, int y) {'. This matches perfectly! Let's validate chain [12, 15, 18, 22, 26, 30, 35].
+
+[23:59:58] Action: file_valid{'chain': [12, 15, 18, 22, 26, 30, 35], 'lang': 'c'}
+
+[23:59:58] Observation: Cluster confirmed, chain updated -> [12, 15, 18, 22, 26, 30, 35]
+
+[23:59:58] Observation: Chain [12, 15, 18, 22, 26, 30, 35] is VALID for c. Structural continuity verified.
+
+[23:59:58] === Seam Progress: 7/8 clusters | Target: _RVER.C ===
+
+[23:59:58] Waiting for LLM reasoning...
+
+[00:00:03] Thought: Chain [12, 15, 18, 22, 26, 30, 35] is valid (7/8 clusters). We need 1 more cluster (8th). Let's read the tail of cluster 35.
+
+[00:00:03] Action: disk_read{'cluster': 35, 'size': 1024}
+
+[00:00:03] Observation: Cluster 35 content 1024 bytes:
+[Head]:
+   return accumulator % 65536;
+}
+
+int helper_routine_30(int x, int y) {
+    // Routine 30 performs matrix multiplication stage 30
+    int accumulator = (x * 17) ^ (y * 31) + 3000;
+    return acc
+[Tail]:
+    // Routine 34 performs matrix multiplication stage 34
+    int accumulator = (x * 17) ^ (y * 31) + 3400;
+    return accumulator % 65536;
+}
+
+int process_network_packet(int *packet_buffer, int b
+[Preview]:
+Tail of cluster 35: ...(x * 17) ^ (y * 31) + 3400;
+    return accumulator % 65536;
+}
+
+int process_network_packet(int *packet_buffer, int b
+Head of cluster 35: return accumulator % 65536;
+}
+
+int helper_routine_30(int x, int y) {
+    // Routine 30 performs matrix multiplica...
+Combined: ...(x * 17) ^ (y * 31) + 3400;
+    return accumulator % 65536;
+}
+
+int process_network_packet(int *packet_buffer, int b return accumulator % 65536;
+}
+
+int helper_routine_30(int x, int y) {
+    // Routine 30 performs matrix multiplica...
+
+[00:00:03] === Seam Progress: 7/8 clusters | Target: _RVER.C ===
+
+[00:00:03] Waiting for LLM reasoning...
+
+[00:00:37] Thought: Tail of cluster 35 ends with 'int process_network_packet(int *packet_buffer, int b'. Let's search around cluster 35.
+
+[00:00:37] Action: hex_search{'cluster': 35, 'radius': 50}
+
+[00:00:37] Observation: Current chain tail from cluster 35:
+...(x * 17) ^ (y * 31) + 3400;
+    return accumulator % 65536;
+}
+
+int process_network_packet(int *packet_buffer, int b
+
+Found 8 candidate cluster entries:
+- Cluster 36: entropy=4.79 preview='# Incident Post-Mortem Report ## Executive Summary On 2026-11-18 at 14:22 UTC, d'
+- Cluster 37: entropy=4.54 preview='{   "status": "healthy",   "uptime": 849204,   "nodes": [     {"id": "node-01",'
+- Cluster 38: entropy=4.87 preview='#!/usr/bin/env bash set -euo pipefail  echo '[*] Starting container health monit'
+- Cluster 39: entropy=4.46 preview='// Graphics rendering pipeline - Vertex shader transform void compute_mvp_matrix'
+- Cluster 40: entropy=4.07 preview='uffer_size) {      int checksum = 0;      for (int i = 0; i < buffer_size; i++)'
+- Cluster 41: entropy=5.04 preview='<!DOCTYPE html> <html> <head><title>System Telemetry</title></head> <body> <div'
+- Cluster 34: entropy=5.3 preview='-- Database Migration: 2026-11-18_audit_schema.sql CREATE TABLE IF NOT EXISTS au'
+- Cluster 33: entropy=4.48 preview='import os import sys import json  def aggregate_metrics(events):     summary = {'
+
+[00:01:07] Thought: Tail of cluster 35 ends with 'int process_network_packet(int *packet_buffer, int b'. Cluster 40 starts with 'uffer_size) { int checksum = 0; for (int i = 0; i < buffer_size; i++)', which completes 'int process_network_packet(int *packet_buffer, int buffer_size) {'. Let's validate the chain [12, 15, 18, 22, 26, 30, 35, 40].
+
+[00:01:07] Action: file_valid{'chain': [12, 15, 18, 22, 26, 30, 35, 40], 'lang': 'c'}
+
+[00:01:07] Observation: Cluster confirmed, chain updated -> [12, 15, 18, 22, 26, 30, 35, 40]
+
+[00:01:07] Observation: Chain [12, 15, 18, 22, 26, 30, 35, 40] is VALID for c. Complete file 100%.
+
+[00:01:07] [+] Done. AST verified: PASSED 100% - c grammar valid
+
+[00:01:07] Saved -> outputs/recovered\RVER.C
+
+[00:01:07] SHA-256: d9aff07a14747e95d51de71d4a22bd048d8a4149e479eaf06a995f7b266712a2
+
+[00:01:07] === MISSION COMPLETE ===
+
+[00:01:07] [+] Done. Files recovered: 2 / 2
+PS C:\Users\ASUS\Downloads\Trauma Team> ╔═════════════════════════════════════════════════════════════════════╗
+║  ▄         ██████         ▄                                         ║
+║  ██▄▄      ██████       ▄██                                         ║
+║  █████▄    ██████    ▄█████    █████ ████▄ ▄███▄ █   █ █   █ ▄███▄  ║
+║  ████████▄ ██████ ▄▄███████      █   █   █ █   █ █   █ ██ ██ █   █  ║
+║   ▀▀█████████████████████▀       █   ████▀ █████ █   █ █ █ █ █████  ║
+║      ▀████████████████▀          █   █  ▀▄ █   █ █   █ █   █ █   █  ║
+║         ▀██████████▀▀            █   █   █ █   █ ▀███▀ █   █ █   █  ║
+║         ▄██████████▄▄                                               ║
+║      ▄████████████████▄           █████   █████   ▄███▄   █   █     ║
+║   ▄▄█████████████████████▄          █     █       █   █   ██ ██     ║
+║  ████████▀ ██████ ▀▀███████         █     ████    █████   █ █ █     ║
+║  █████▀    ██████    ▀█████         █     █       █   █   █   █     ║
+║  ██▀▀      ██████       ▀██         █     █████   █   █   █   █     ║
+║  ▀         ██████         ▀                                         ║
+╚═════════════════════════════════════════════════════════════════════╝
+
+[00:27:07] Image: test.img
+
+[00:27:07] File system: FAT32
+
+[00:27:07] Directory: 8
+📁 / (Root)
+├── System Volume Information [ACTIVE] 0 B (Cluster: 3)
+│   └── WPSettings.dat [ACTIVE] 12 B (Cluster: 4)
+├── 1_LEAD.TXT [ACTIVE] 482 B (Cluster: 5)
+├── _HOLE.TXT [DELETED] 1.1 KB (Cluster: 6)
+├── 3_blocker.txt [ACTIVE] 1.3 KB (Cluster: 8)
+├── _RVER.C [DELETED] 7.6 KB (Cluster: 12)
+└── 📁 $RECYCLE.BIN/
+
+[00:27:07]     └── DESKTOP.INI [ACTIVE] 129 B (Cluster: 11)
+
+[00:27:07] === Processing: _HOLE.TXT - 1140 bytes - lang: txt ===
+
+[00:27:07] Method: FAT multi clusters
+
+[00:27:07] Starting cluster 6 is zeroed out. Skipping.
+
+[00:27:07] Final chain: []
+
+[00:27:07] [!] FAILED: Unrecoverable!
+
+[00:27:07] === Processing: _RVER.C - 7825 bytes - lang: c ===
+
+[00:27:07] Method: FAT multi clusters
+
+[00:27:19] Thought: I will search for candidate clusters around cluster 12 to find the next part of the file.
+
+[00:27:19] Action: hex_search{'cluster': 12, 'radius': 50}
+
+[00:27:19] Observation: Current chain tail from cluster 12:
+...^ (y * 31) + 100;
+    return accumulator % 65536;
+}
+
+int helper_routine_02(int x, int y) {
+    // Routine 02 perfor
+
+Found 8 candidate cluster entries:
+- Cluster 13: entropy=5.04 preview='<!DOCTYPE html> <html> <head><title>System Telemetry</title></head> <body> <div'
+- Cluster 14: entropy=4.48 preview='import os import sys import json  def aggregate_metrics(events):     summary = {'
+- Cluster 15: entropy=4.65 preview='ms matrix multiplication stage 2      int accumulator = (x * 17) ^ (y * 31) + 20'
+- Cluster 16: entropy=5.3 preview='-- Database Migration: 2026-11-18_audit_schema.sql CREATE TABLE IF NOT EXISTS au'
+- Cluster 17: entropy=4.79 preview='# Incident Post-Mortem Report ## Executive Summary On 2026-11-18 at 14:22 UTC, d'
+- Cluster 18: entropy=4.69 preview='mulator % 65536;  }    int helper_routine_08(int x, int y) {      // Routine 08'
+- Cluster 19: entropy=4.54 preview='{   "status": "healthy",   "uptime": 849204,   "nodes": [     {"id": "node-01",'
+- Cluster 20: entropy=4.87 preview='#!/usr/bin/env bash set -euo pipefail  echo '[*] Starting container health monit'
+
+[00:27:28] Thought: Tail of cluster 12 ends with 'int helper_routine_02(int x, int y) {
+    // Routine 02 perfor'. Cluster 15 begins with 'ms matrix multiplication stage 2      int accumulator = (x * 17) ^ (y * 31) + 20', which seamlessly completes 'performs matrix multiplication stage 2'. Let's validate chain [12, 15].
+
+[00:27:28] Action: file_valid{'chain': [12, 15], 'lang': 'c'}
+
+[00:27:28] Observation: Cluster confirmed, chain updated -> [12, 15]
+
+[00:27:28] Observation: Chain [12, 15] is VALID for c. Structural continuity verified.
+
+[00:29:37] Thought: Cluster 15 is valid. Now we need to search for the next cluster continuing after cluster 15.
+
+[00:29:37] Action: hex_search{'cluster': 15, 'radius': 50}
+
+[00:29:37] Observation: Current chain tail from cluster 15:
+...// Routine 07 performs matrix multiplication stage 7
+    int accumulator = (x * 17) ^ (y * 31) + 700;
+    return accu
+
+Found 8 candidate cluster entries:
+- Cluster 16: entropy=5.3 preview='-- Database Migration: 2026-11-18_audit_schema.sql CREATE TABLE IF NOT EXISTS au'
+- Cluster 17: entropy=4.79 preview='# Incident Post-Mortem Report ## Executive Summary On 2026-11-18 at 14:22 UTC, d'
+- Cluster 18: entropy=4.69 preview='mulator % 65536;  }    int helper_routine_08(int x, int y) {      // Routine 08'
+- Cluster 19: entropy=4.54 preview='{   "status": "healthy",   "uptime": 849204,   "nodes": [     {"id": "node-01",'
+- Cluster 20: entropy=4.87 preview='#!/usr/bin/env bash set -euo pipefail  echo '[*] Starting container health monit'
+- Cluster 21: entropy=4.46 preview='// Graphics rendering pipeline - Vertex shader transform void compute_mvp_matrix'
+- Cluster 22: entropy=4.66 preview='ix multiplication stage 13      int accumulator = (x * 17) ^ (y * 31) + 1300;'
+- Cluster 23: entropy=5.04 preview='<!DOCTYPE html> <html> <head><title>System Telemetry</title></head> <body> <div'
+
+[00:29:40] Thought: Tail of cluster 15 ends with 'return accu'. Cluster 18 starts with 'mulator % 65536;  }    int helper_routine_08(int x, int y) {'. This matches 'return accumulator % 65536;'. Let's validate chain [12, 15, 18].
+
+[00:29:40] Action: file_valid{'chain': [12, 15, 18], 'lang': 'c'}
+
+[00:29:40] Observation: Cluster confirmed, chain updated -> [12, 15, 18]
+
+[00:29:40] Observation: Chain [12, 15, 18] is VALID for c. Structural continuity verified.

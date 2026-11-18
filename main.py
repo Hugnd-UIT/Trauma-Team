@@ -1,0 +1,272 @@
+import os
+import sys
+import json
+import importlib
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+disk_read = importlib.import_module("tools.disk-read")
+hex_dump = importlib.import_module("tools.hex-dump")
+hex_search = importlib.import_module("tools.hex-search")
+file_valid = importlib.import_module("tools.file-valid")
+file_export = importlib.import_module("tools.file-export")
+detect = importlib.import_module("src.detect")
+build = importlib.import_module("src.build")
+router = importlib.import_module("file-systems.router")
+
+from agent.llm import LLM
+from agent import state, context, prompt
+from utils.logger import setup_logger
+
+BANNER = """╔═════════════════════════════════════════════════════════════════════╗
+║  ▄         ██████         ▄                                         ║
+║  ██▄▄      ██████       ▄██                                         ║
+║  █████▄    ██████    ▄█████    █████ ████▄ ▄███▄ █   █ █   █ ▄███▄  ║
+║  ████████▄ ██████ ▄▄███████      █   █   █ █   █ █   █ ██ ██ █   █  ║
+║   ▀▀█████████████████████▀       █   ████▀ █████ █   █ █ █ █ █████  ║
+║      ▀████████████████▀          █   █  ▀▄ █   █ █   █ █   █ █   █  ║
+║         ▀██████████▀▀            █   █   █ █   █ ▀███▀ █   █ █   █  ║
+║         ▄██████████▄▄                                               ║
+║      ▄████████████████▄           █████   █████   ▄███▄   █   █     ║
+║   ▄▄█████████████████████▄          █     █       █   █   ██ ██     ║
+║  ████████▀ ██████ ▀▀███████         █     ████    █████   █ █ █     ║
+║  █████▀    ██████    ▀█████         █     █       █   █   █   █     ║
+║  ██▀▀      ██████       ▀██         █     █████   █   █   █   █     ║
+║  ▀         ██████         ▀                                         ║
+╚═════════════════════════════════════════════════════════════════════╝"""
+
+
+def extract_runs(disk, runs, sectors_per_cluster, bytes_per_sector):
+    parts = []
+    cluster_size = sectors_per_cluster * bytes_per_sector
+    for run_length, lcn in runs:
+        offset = lcn * cluster_size
+        parts.append(disk.read(offset, run_length * cluster_size))
+    return b"".join(parts)
+
+
+def recover_fat_multi(disk, item, info, bot, log):
+    cluster_size = info["csize"]
+    sectors_per_cluster = info["spc"]
+    bytes_per_sector = info["bps"]
+    data_lba = info["data_lba"]
+    size = item["size"]
+    needed = (size + cluster_size - 1) // cluster_size
+    start_cluster = item["cluster"]
+    name = item["name"]
+    lang = item.get("lang") or "code"
+
+    first_cluster_data = disk.cluster(start_cluster, data_lba, sectors_per_cluster, bytes_per_sector)
+    if not first_cluster_data or not any(first_cluster_data):
+        log.info(f"Starting cluster {start_cluster} is zeroed out. Skipping.")
+        return b"", []
+
+    chain = [start_cluster]
+    user_prompt = prompt.USER.format(
+        name=name,
+        lang=lang,
+        size=size,
+        needed=needed,
+        chain=chain,
+        progress=len(chain)
+    )
+    messages = context.build(user_prompt)
+
+    step = 0
+    max_steps = max(25, needed * 4)
+
+    while step < max_steps and len(chain) < needed:
+        step += 1
+        sys.stdout.flush()
+
+        text_response, tokens_in, tokens_out = bot.call(messages)
+        state.token(tokens_in, tokens_out)
+
+        if not text_response or text_response.startswith("[!]"):
+            log.info(f"Error: {text_response}")
+            break
+
+        thought = ""
+        tool = ""
+        args = {}
+
+        try:
+            if "{" in text_response and "}" in text_response:
+                json_string = text_response[text_response.find("{"):text_response.rfind("}") + 1]
+                data = json.loads(json_string)
+                thought = data.get("thought", "")
+                tool = data.get("tool", "")
+                args = data.get("args", {})
+        except Exception:
+            thought = ""
+            tool = ""
+            args = {}
+
+        if not tool:
+            tool = "hex_search"
+            args = {"cluster": chain[-1], "radius": 50}
+
+        if thought:
+            log.info(f"Thought: {thought}")
+        log.info(f"Action: {tool}{args}")
+
+        obs = ""
+        if tool in ["hex_search", "search_hex", "search"]:
+            obs = hex_search.execute(disk, info, args, chain=chain)
+        elif tool in ["disk_read", "read_cluster", "read"]:
+            obs = disk_read.execute(disk, info, args, chain=chain)
+            c = args.get("cluster")
+            if isinstance(c, int) and c not in chain:
+                val_res = file_valid.execute(disk, info, {"chain": chain + [c], "lang": lang}, needed=needed)
+                if "VALID" in val_res:
+                    obs += f"\nValidation check: cluster {c} connects cleanly with chain {chain}. To confirm, call file_valid with chain {chain + [c]}."
+                else:
+                    obs += f"\nValidation warning: cluster {c} failed syntax verification: {val_res}"
+        elif tool in ["file_valid", "validate_file", "validate"]:
+            obs = file_valid.execute(disk, info, args, default_lang=lang, target_size=size, needed=needed)
+            if "VALID" in obs:
+                chain_arg = args.get("chain", [])
+                if isinstance(chain_arg, list) and len(chain_arg) > len(chain):
+                    if chain_arg[:len(chain)] == chain:
+                        chain = list(chain_arg)
+                        log.info(f"Observation: Cluster confirmed, chain updated -> {chain}")
+        elif tool in ["file_export", "export_file", "export", "save"]:
+            obs = file_export.execute(disk, info, args, fallback_name=name, fallback_size=size)
+            log.info(f"Observation: {obs}")
+            break
+        else:
+            obs = f"Unknown tool: {tool}. Available tools: hex_search, disk_read, file_valid, file_export."
+
+        log.info(f"Observation: {obs}")
+
+        next_user_prompt = prompt.USER.format(
+            name=name,
+            lang=lang,
+            size=size,
+            needed=needed,
+            chain=chain,
+            progress=len(chain)
+        )
+        combined_message = f"{next_user_prompt}\n\nObservation from {tool}:\n{obs}\n\nObserve the tool result and decide on the next action."
+
+        messages.append({"role": "assistant", "content": text_response})
+        messages.append({"role": "user", "content": combined_message})
+
+        if len(chain) == needed:
+            test_payload = b"".join(
+                disk.cluster(cid, data_lba, sectors_per_cluster, bytes_per_sector)
+                for cid in chain
+            )[:size]
+            is_valid, err = file_valid.validate(test_payload, lang)
+            if is_valid:
+                return test_payload, chain
+
+    final_payload = b"".join(
+        disk.cluster(cid, data_lba, sectors_per_cluster, bytes_per_sector)
+        for cid in chain
+    )[:size]
+    return final_payload, chain
+
+
+def load_env():
+    if os.path.exists(".env"):
+        with open(".env", "r", encoding="utf-8") as file_pointer:
+            for line in file_pointer:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), value.strip())
+
+
+def run(img_path):
+    load_env()
+    log = setup_logger("outputs/recovery.log")
+    for b_line in BANNER.splitlines():
+        log.info(b_line)
+
+    with disk_read.Disk(img_path) as disk:
+        info = detect.detect(disk)
+        fs_type = info.get("fs", "UNKNOWN")
+        log.info(f"Image: {img_path}")
+        log.info(f"File system: {fs_type}")
+
+        state.init(image=img_path, fs=fs_type)
+        items = router.scan(disk, info)
+        log.info(f"Directory: {len(items)}")
+
+        non_sys = [item for item in items if not item["name"].startswith("$")]
+        tree_lines = build.render(build.build_dict(non_sys))
+        for t_line in tree_lines:
+            log.info(t_line)
+
+        deleted_files = [item for item in items if item.get("deleted") and not item.get("is_dir")]
+        bot = LLM()
+        results = []
+
+        for item in deleted_files:
+            name = item["name"]
+            size = item.get("size", 0)
+            lang = item.get("lang") or "txt"
+            chain = []
+            payload = b""
+
+            log.info(f"=== Processing: {name} - {size} bytes - lang: {lang} ===")
+
+            if item.get("resident") and item.get("resident_data") is not None:
+                payload = item["resident_data"][:size]
+                chain = ["Resident"]
+                log.info("Method: NTFS single cluster")
+
+            elif fs_type == "NTFS" and item.get("runs"):
+                runs = item["runs"]
+                payload = extract_runs(disk, runs, info["spc"], info["bps"])[:size]
+                chain = [r[1] for r in runs]
+                log.info("Method: NTFS multi clusters")
+
+            elif fs_type.startswith("FAT") and size <= info["csize"]:
+                single_cluster = item.get("cluster", 0)
+                payload = disk.cluster(single_cluster, info["data_lba"], info["spc"], info["bps"])[:size]
+                chain = [single_cluster]
+                log.info("Method: FAT single cluster")
+
+            elif fs_type.startswith("FAT") and size > info["csize"]:
+                log.info("Method: FAT multi clusters")
+                payload, chain = recover_fat_multi(disk, item, info, bot, log)
+                if chain:
+                    log.info(f"Final chain: {chain}")
+
+            if not chain or not payload:
+                log.info("[!] FAILED: Unrecoverable!")
+                state.update(name, "failed", chain=[])
+                continue
+
+            valid, err = file_valid.validate(payload, lang)
+            if not valid:
+                log.info(f"Error: file_valid check warning: {err}")
+            else:
+                log.info(f"[+] Done. AST verified: PASSED 100% - {lang} grammar valid")
+
+            res = file_export.save(payload, name, size=size, chain=chain)
+            state.update(name, "done", chain=chain)
+            results.append(res)
+            log.info(f"Saved -> {res['path']}")
+            log.info(f"SHA-256: {res['sha256']}")
+
+        report_path = os.path.join("outputs", "info.json")
+        with open(report_path, "w", encoding="utf-8") as file_pointer:
+            json.dump({
+                "image": img_path,
+                "fs": info,
+                "total_items": len(items),
+                "recovered_count": len(results),
+                "recovered_files": results
+            }, file_pointer, indent=2)
+
+        log.info("=== MISSION COMPLETE ===")
+        log.info(f"[+] Done. Files recovered: {len(results)} / {len(deleted_files)}")
+
+
+if __name__ == "__main__":
+    target = sys.argv[1] if len(sys.argv) > 1 else r"G:\My Drive\NT212\assign\FAT.img"
+    run(target)
