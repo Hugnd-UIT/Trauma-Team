@@ -229,6 +229,15 @@ def validate(content, lang):
 
 def execute(disk, info, args, default_lang="c", target_size=None, needed=None):
     chain = args.get("chain", [])
+    if not chain and "ranges" in args:
+        chain = []
+        for rng in args.get("ranges", []):
+            if len(rng) == 2 and isinstance(rng[0], int) and isinstance(rng[1], int):
+                chain.extend(range(rng[0], rng[1] + 1))
+    elif not chain and "range" in args:
+        rng = args.get("range", [])
+        if len(rng) == 2 and isinstance(rng[0], int) and isinstance(rng[1], int):
+            chain = list(range(rng[0], rng[1] + 1))
     if not chain:
         return "Error: chain parameter is empty."
     lang = args.get("lang") or default_lang
@@ -242,14 +251,19 @@ def execute(disk, info, args, default_lang="c", target_size=None, needed=None):
     if target_size:
         payload = payload[:target_size]
 
+    c_repr = f"[{chain[0]}..{chain[-1]}] {len(chain)} clusters" if len(chain) > 10 else str(chain)
+
     if needed and len(chain) == needed:
         ok, err = validate(payload, lang)
         if ok:
-            return f"Chain {chain} is VALID for {lang}. Complete file 100%."
-        return f"Chain {chain} is INVALID for {lang}. Error: {err}"
+            return f"Chain {c_repr} is VALID for {lang}. Complete file 100%."
+        return f"Chain {c_repr} is INVALID for {lang}. Error: {err}"
 
-    ok, err = check_brackets(payload.decode("utf-8", errors="ignore"))
-    if not ok and err and "Unmatched" in err:
-        return f"Chain {chain} is INVALID for {lang}. Rogue closing bracket: {err}"
+    code_langs = {"c", "cpp", "h", "cs", "rs", "rust", "go", "golang", "js", "jsx", "ts", "tsx", "java", "py", "json"}
+    norm_lang = lang.lower().lstrip(".")
+    if norm_lang in code_langs:
+        ok, err = check_brackets(payload.decode("utf-8", errors="ignore"))
+        if not ok and err and "Unmatched" in err:
+            return f"Chain {c_repr} is INVALID for {lang}. Rogue closing bracket: {err}"
 
-    return f"Chain {chain} is VALID for {lang}. Structural continuity verified."
+    return f"Chain {c_repr} is VALID for {lang}. Structural continuity verified."

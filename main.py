@@ -64,6 +64,8 @@ def recover_fat_multi(disk, item, info, bot, log):
         log.info(f"Starting cluster {start_cluster} is zeroed out. Skipping.")
         return b"", []
 
+    context.summary = ""
+    state.history = []
     chain = [start_cluster]
     user_prompt = prompt.USER.format(
         name=name,
@@ -94,17 +96,36 @@ def recover_fat_multi(disk, item, info, bot, log):
         tool = ""
         args = {}
 
-        try:
-            if "{" in text_response and "}" in text_response:
-                json_string = text_response[text_response.find("{"):text_response.rfind("}") + 1]
-                data = json.loads(json_string)
-                thought = data.get("thought", "")
-                tool = data.get("tool", "")
-                args = data.get("args", {})
-        except Exception:
-            thought = ""
-            tool = ""
-            args = {}
+        if isinstance(text_response, str):
+            clean_resp = text_response.strip()
+            if clean_resp.startswith("```"):
+                resp_lines = clean_resp.splitlines()
+                if resp_lines and resp_lines[0].startswith("```"):
+                    resp_lines = resp_lines[1:]
+                if resp_lines and resp_lines[-1].startswith("```"):
+                    resp_lines = resp_lines[:-1]
+                clean_resp = "\n".join(resp_lines).strip()
+
+            try:
+                data = json.loads(clean_resp)
+                if isinstance(data, dict):
+                    thought = data.get("thought", "")
+                    tool = data.get("tool", "")
+                    args = data.get("args", {})
+            except Exception:
+                pass
+
+            if not tool and "{" in clean_resp and "}" in clean_resp:
+                try:
+                    s_idx = clean_resp.find("{")
+                    e_idx = clean_resp.rfind("}") + 1
+                    data = json.loads(clean_resp[s_idx:e_idx])
+                    if isinstance(data, dict):
+                        thought = data.get("thought", "")
+                        tool = data.get("tool", "")
+                        args = data.get("args", {})
+                except Exception:
+                    pass
 
         if not tool:
             tool = "hex_search"
@@ -118,7 +139,7 @@ def recover_fat_multi(disk, item, info, bot, log):
 
         if thought:
             log.info(f"Thought: {thought}")
-        log.info(f"Action: {tool}{args}")
+        log.info(f"Action: {tool}: {json.dumps(args)}")
 
         obs = ""
         if tool in ["hex_search", "search_hex", "search"]:
@@ -137,17 +158,37 @@ def recover_fat_multi(disk, item, info, bot, log):
             obs = file_valid.execute(disk, info, args, default_lang=tool_lang, target_size=size, needed=needed)
             if " is VALID" in obs and "INVALID" not in obs:
                 chain_arg = args.get("chain", [])
+                if not chain_arg and "ranges" in args:
+                    chain_arg = []
+                    for rng in args.get("ranges", []):
+                        if len(rng) == 2 and isinstance(rng[0], int) and isinstance(rng[1], int):
+                            chain_arg.extend(range(rng[0], rng[1] + 1))
+                elif not chain_arg and "range" in args:
+                    rng = args.get("range", [])
+                    if len(rng) == 2 and isinstance(rng[0], int) and isinstance(rng[1], int):
+                        chain_arg = list(range(rng[0], rng[1] + 1))
                 if isinstance(chain_arg, list) and len(chain_arg) > len(chain):
                     if chain_arg[:len(chain)] == chain:
                         chain = list(chain_arg)
                         lang = tool_lang
-                        log.info(f"Observation: Cluster confirmed, chain updated -> {chain}")
+                        c_disp = f"[{chain[0]}..{chain[-1]}] total={len(chain)}/{needed}" if len(chain) > 10 else str(chain)
+                        log.info(f"Observation: Cluster confirmed, chain updated -> {c_disp}")
             else:
-                log.info(f"Observation: Cluster rejected or invalid. Current chain remains: {chain}")
-                obs += f"\nCandidate cluster rejected. Chain remains {chain}. Please inspect other clusters."
+                c_disp = f"[{chain[0]}..{chain[-1]}] total={len(chain)}/{needed}" if len(chain) > 10 else str(chain)
+                log.info(f"Observation: Cluster rejected or invalid. Current chain remains: {c_disp}")
+                obs += f"\nCandidate cluster rejected. Chain remains {c_disp}. Please inspect other clusters."
         
         elif tool in ["file_export", "export_file", "export", "save"]:
             chain_arg = args.get("chain", chain)
+            if not chain_arg and "ranges" in args:
+                chain_arg = []
+                for rng in args.get("ranges", []):
+                    if len(rng) == 2 and isinstance(rng[0], int) and isinstance(rng[1], int):
+                        chain_arg.extend(range(rng[0], rng[1] + 1))
+            elif not chain_arg and "range" in args:
+                rng = args.get("range", [])
+                if len(rng) == 2 and isinstance(rng[0], int) and isinstance(rng[1], int):
+                    chain_arg = list(range(rng[0], rng[1] + 1))
             export_lang = args.get("lang") or lang
             test_payload = b"".join(
                 disk.cluster(cid, data_lba, sectors_per_cluster, bytes_per_sector)
@@ -157,28 +198,40 @@ def recover_fat_multi(disk, item, info, bot, log):
             if is_valid and len(chain_arg) == needed:
                 chain = list(chain_arg)
                 lang = export_lang
-                log.info(f"Observation: Chain {chain} verified 100% for export.")
+                c_disp = f"[{chain[0]}..{chain[-1]}] total={len(chain)}/{needed}" if len(chain) > 10 else str(chain)
+                log.info(f"Observation: Chain {c_disp} verified 100% for export.")
                 return test_payload, chain
             else:
-                obs = f"Validation failed for export: {err}. Chain {chain_arg} is invalid. Current chain remains {chain}. Continue searching."
+                c_disp = f"[{chain[0]}..{chain[-1]}] total={len(chain)}/{needed}" if len(chain) > 10 else str(chain)
+                obs = f"Validation failed for export: {err}. Chain {c_disp} is invalid. Current chain remains {c_disp}. Continue searching."
                 log.info(f"Observation: {obs}")
         else:
             obs = f"Unknown tool: {tool}. Available tools: hex_search, disk_read, file_valid, file_export."
 
+        state.record(step, tool, args, obs[:150])
         log.info(f"Observation: {obs}")
 
+        c_disp = f"[{chain[0]}..{chain[-1]}] total={len(chain)}/{needed} tail={chain[-1]}" if len(chain) > 10 else str(chain)
         next_user_prompt = prompt.USER.format(
             name=name,
             lang=lang,
             size=size,
             needed=needed,
-            chain=chain,
+            chain=c_disp,
             progress=len(chain)
         )
         combined_message = f"{next_user_prompt}\n\nObservation from {tool}:\n{obs}\n\nObserve the tool result and decide on the next action."
 
         messages.append({"role": "assistant", "content": text_response})
         messages.append({"role": "user", "content": combined_message})
+
+        approx_tokens = sum(len(str(m.get("content", ""))) for m in messages) // 3
+        if (tokens_in > 20000 or approx_tokens > 20000) and len(state.history) > 2:
+            log.info(f"Context reached {max(tokens_in, approx_tokens)} tokens, exceeding 20k threshold. Compacting history.")
+            context.compact(bot, max_history=2)
+            recent_turns = messages[-2:] if len(messages) >= 2 else []
+            messages = context.build(next_user_prompt)
+            messages.extend(recent_turns)
 
         if len(chain) == needed:
             test_payload = b"".join(
@@ -227,6 +280,11 @@ def save_info_report(img_path, info, items, results):
 
 
 def run(img_path):
+    try:
+        sys.stdout.write("\033(B\033)B\017\033[0m")
+        sys.stdout.flush()
+    except Exception:
+        pass
     load_env()
     log = setup_logger("outputs/recovery.log")
     for b_line in BANNER.strip().splitlines():
