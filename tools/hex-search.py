@@ -157,7 +157,7 @@ def execute(disk, info, args, chain=None, lang="code"):
     if chain:
         prev_c = chain[-1]
         prev_raw = disk.cluster(prev_c, info["data_lba"], info["spc"], info["bps"])
-        prev_tail = "".join(chr(b) if (32 <= b <= 126 or b in (10, 9)) and b != 27 else "." for b in prev_raw[-120:]).strip()
+        prev_tail = prev_raw[-120:].decode("utf-8", errors="replace").strip()
         lines.append(f"Current chain tail from cluster {prev_c}:\n...{prev_tail}\n")
     lines.append(f"Found {len(cands)} candidate cluster entries:")
     for c in cands:

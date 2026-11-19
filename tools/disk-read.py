@@ -58,14 +58,14 @@ def execute(disk, info, args, chain=None):
         return f"Cluster {cluster} is empty or unallocated."
     if size:
         raw = raw[:size]
-    safe_chars = [chr(b) if (32 <= b <= 126 or b in (10, 9)) and b != 27 else "." for b in raw]
-    head = "".join(safe_chars[:200])
-    tail = "".join(safe_chars[-200:])
+    text = raw.decode("utf-8", errors="replace")
+    head = text[:200]
+    tail = text[-200:]
     seam_info = ""
     if chain:
         prev_c = chain[-1]
         prev_raw = disk.cluster(prev_c, data_lba, spc, bps)
-        prev_tail = "".join(chr(b) if (32 <= b <= 126 or b in (10, 9)) and b != 27 else "." for b in prev_raw[-120:]).strip()
-        c_head = "".join(chr(b) if (32 <= b <= 126 or b in (10, 9)) and b != 27 else "." for b in raw[:120]).strip()
+        prev_tail = prev_raw[-120:].decode("utf-8", errors="replace").strip()
+        c_head = raw[:120].decode("utf-8", errors="replace").strip()
         seam_info = f"\n[Preview]:\nTail of cluster {prev_c}: ...{prev_tail}\nHead of cluster {cluster}: {c_head}...\nCombined: ...{prev_tail} {c_head}..."
     return f"Cluster {cluster} content {len(raw)} bytes:\n[Head]:\n{head}\n[Tail]:\n{tail}{seam_info}"
