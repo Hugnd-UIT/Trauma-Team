@@ -94,17 +94,36 @@ def recover_fat_multi(disk, item, info, bot, log):
         tool = ""
         args = {}
 
-        try:
-            if "{" in text_response and "}" in text_response:
-                json_string = text_response[text_response.find("{"):text_response.rfind("}") + 1]
-                data = json.loads(json_string)
-                thought = data.get("thought", "")
-                tool = data.get("tool", "")
-                args = data.get("args", {})
-        except Exception:
-            thought = ""
-            tool = ""
-            args = {}
+        if isinstance(text_response, str):
+            clean_resp = text_response.strip()
+            if clean_resp.startswith("```"):
+                resp_lines = clean_resp.splitlines()
+                if resp_lines and resp_lines[0].startswith("```"):
+                    resp_lines = resp_lines[1:]
+                if resp_lines and resp_lines[-1].startswith("```"):
+                    resp_lines = resp_lines[:-1]
+                clean_resp = "\n".join(resp_lines).strip()
+
+            try:
+                data = json.loads(clean_resp)
+                if isinstance(data, dict):
+                    thought = data.get("thought", "")
+                    tool = data.get("tool", "")
+                    args = data.get("args", {})
+            except Exception:
+                pass
+
+            if not tool and "{" in clean_resp and "}" in clean_resp:
+                try:
+                    s_idx = clean_resp.find("{")
+                    e_idx = clean_resp.rfind("}") + 1
+                    data = json.loads(clean_resp[s_idx:e_idx])
+                    if isinstance(data, dict):
+                        thought = data.get("thought", "")
+                        tool = data.get("tool", "")
+                        args = data.get("args", {})
+                except Exception:
+                    pass
 
         if not tool:
             tool = "hex_search"
@@ -118,7 +137,7 @@ def recover_fat_multi(disk, item, info, bot, log):
 
         if thought:
             log.info(f"Thought: {thought}")
-        log.info(f"Action: {tool}{args}")
+        log.info(f"Action: {tool}: {json.dumps(args)}")
 
         obs = ""
         if tool in ["hex_search", "search_hex", "search"]:
@@ -227,6 +246,11 @@ def save_info_report(img_path, info, items, results):
 
 
 def run(img_path):
+    try:
+        sys.stdout.write("\033(B\033)B\017\033[0m")
+        sys.stdout.flush()
+    except Exception:
+        pass
     load_env()
     log = setup_logger("outputs/recovery.log")
     for b_line in BANNER.strip().splitlines():

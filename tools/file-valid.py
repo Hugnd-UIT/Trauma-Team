@@ -248,8 +248,11 @@ def execute(disk, info, args, default_lang="c", target_size=None, needed=None):
             return f"Chain {chain} is VALID for {lang}. Complete file 100%."
         return f"Chain {chain} is INVALID for {lang}. Error: {err}"
 
-    ok, err = check_brackets(payload.decode("utf-8", errors="ignore"))
-    if not ok and err and "Unmatched" in err:
-        return f"Chain {chain} is INVALID for {lang}. Rogue closing bracket: {err}"
+    code_langs = {"c", "cpp", "h", "cs", "rs", "rust", "go", "golang", "js", "jsx", "ts", "tsx", "java", "py", "json"}
+    norm_lang = lang.lower().lstrip(".")
+    if norm_lang in code_langs:
+        ok, err = check_brackets(payload.decode("utf-8", errors="ignore"))
+        if not ok and err and "Unmatched" in err:
+            return f"Chain {chain} is INVALID for {lang}. Rogue closing bracket: {err}"
 
     return f"Chain {chain} is VALID for {lang}. Structural continuity verified."
