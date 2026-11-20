@@ -300,17 +300,59 @@ def validate(content, lang):
     return True, None
 
 
+def parse_chain(args, fallback_chain=None):
+    raw = args.get("chain")
+    if not raw and "ranges" in args:
+        raw = args.get("ranges")
+    elif not raw and "range" in args:
+        raw = args.get("range")
+    if raw is None:
+        raw = fallback_chain or []
+
+    if isinstance(raw, (int, str)):
+        try:
+            return [int(raw)]
+        except Exception:
+            return []
+
+    flat = []
+    if isinstance(raw, list):
+        if len(raw) == 2 and isinstance(raw[0], (int, str)) and isinstance(raw[1], (int, str)) and "range" in args and not args.get("chain"):
+            try:
+                s, e = int(raw[0]), int(raw[1])
+                return list(range(s, e + 1)) if s <= e else list(range(s, e - 1, -1))
+            except Exception:
+                return []
+
+        for item in raw:
+            if isinstance(item, int):
+                flat.append(item)
+            elif isinstance(item, str):
+                try:
+                    flat.append(int(item))
+                except Exception:
+                    pass
+            elif isinstance(item, (list, tuple)):
+                if len(item) == 2 and all(isinstance(x, (int, str)) for x in item):
+                    try:
+                        s, e = int(item[0]), int(item[1])
+                        if s <= e:
+                            flat.extend(range(s, e + 1))
+                        else:
+                            flat.extend(range(s, e - 1, -1))
+                    except Exception:
+                        pass
+                else:
+                    for sub in item:
+                        try:
+                            flat.append(int(sub))
+                        except Exception:
+                            pass
+    return flat
+
+
 def execute(disk, info, args, default_lang="c", target_size=None, needed=None):
-    chain = args.get("chain", [])
-    if not chain and "ranges" in args:
-        chain = []
-        for rng in args.get("ranges", []):
-            if len(rng) == 2 and isinstance(rng[0], int) and isinstance(rng[1], int):
-                chain.extend(range(rng[0], rng[1] + 1))
-    elif not chain and "range" in args:
-        rng = args.get("range", [])
-        if len(rng) == 2 and isinstance(rng[0], int) and isinstance(rng[1], int):
-            chain = list(range(rng[0], rng[1] + 1))
+    chain = parse_chain(args)
     if not chain:
         return "Error: chain parameter is empty."
     lang = args.get("lang") or default_lang

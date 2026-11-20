@@ -25,6 +25,11 @@ class Disk:
         return self.read(offset, size)
 
     def cluster(self, k, data_lba, spc=8, bps=512):
+        if not isinstance(k, int):
+            try:
+                k = int(k)
+            except Exception:
+                return b""
         if k < 2:
             return b""
         offset = (data_lba + (k - 2) * spc) * bps

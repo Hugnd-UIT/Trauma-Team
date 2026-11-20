@@ -1,6 +1,9 @@
 import os
 import json
 import hashlib
+import importlib
+
+file_valid = importlib.import_module("tools.file-valid")
 
 
 def save(data, filename, size=None, out_dir="outputs/recovered", chain=None):
@@ -45,16 +48,7 @@ def save(data, filename, size=None, out_dir="outputs/recovered", chain=None):
 
 
 def execute(disk, info, args, fallback_name=None, fallback_size=None):
-    chain = args.get("chain", [])
-    if not chain and "ranges" in args:
-        chain = []
-        for rng in args.get("ranges", []):
-            if len(rng) == 2 and isinstance(rng[0], int) and isinstance(rng[1], int):
-                chain.extend(range(rng[0], rng[1] + 1))
-    elif not chain and "range" in args:
-        rng = args.get("range", [])
-        if len(rng) == 2 and isinstance(rng[0], int) and isinstance(rng[1], int):
-            chain = list(range(rng[0], rng[1] + 1))
+    chain = file_valid.parse_chain(args)
     if not chain:
         return "Error: chain parameter is empty for file_export."
     name = args.get("name") or fallback_name or "recovered.bin"

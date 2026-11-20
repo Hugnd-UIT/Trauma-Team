@@ -194,18 +194,9 @@ def recover_fat_multi(disk, item, info, bot, log):
             tool_lang = args.get("lang") or lang
             obs = file_valid.execute(disk, info, args, default_lang=tool_lang, target_size=size, needed=needed)
             if " is VALID" in obs and "INVALID" not in obs:
-                chain_arg = args.get("chain", [])
-                if not chain_arg and "ranges" in args:
-                    chain_arg = []
-                    for rng in args.get("ranges", []):
-                        if len(rng) == 2 and isinstance(rng[0], int) and isinstance(rng[1], int):
-                            chain_arg.extend(range(rng[0], rng[1] + 1))
-                elif not chain_arg and "range" in args:
-                    rng = args.get("range", [])
-                    if len(rng) == 2 and isinstance(rng[0], int) and isinstance(rng[1], int):
-                        chain_arg = list(range(rng[0], rng[1] + 1))
+                chain_arg = file_valid.parse_chain(args, fallback_chain=chain)
                 if isinstance(chain_arg, list) and len(chain_arg) > len(chain):
-                    if chain_arg[:len(chain)] == chain:
+                    if chain_arg[:len(chain)] == chain or (chain and chain_arg[0] == chain[0]):
                         chain = list(chain_arg)
                         lang = tool_lang
                         c_disp = f"[{chain[0]}..{chain[-1]}] total={len(chain)}/{needed}" if len(chain) > 10 else str(chain)
@@ -216,16 +207,7 @@ def recover_fat_multi(disk, item, info, bot, log):
                 obs += f"\nCandidate cluster rejected. Chain remains {c_disp}. Please inspect other clusters."
         
         elif tool in ["file_export", "export_file", "export", "save"]:
-            chain_arg = args.get("chain", chain)
-            if not chain_arg and "ranges" in args:
-                chain_arg = []
-                for rng in args.get("ranges", []):
-                    if len(rng) == 2 and isinstance(rng[0], int) and isinstance(rng[1], int):
-                        chain_arg.extend(range(rng[0], rng[1] + 1))
-            elif not chain_arg and "range" in args:
-                rng = args.get("range", [])
-                if len(rng) == 2 and isinstance(rng[0], int) and isinstance(rng[1], int):
-                    chain_arg = list(range(rng[0], rng[1] + 1))
+            chain_arg = file_valid.parse_chain(args, fallback_chain=chain)
             export_lang = args.get("lang") or lang
             test_payload = b"".join(
                 disk.cluster(cid, data_lba, sectors_per_cluster, bytes_per_sector)
