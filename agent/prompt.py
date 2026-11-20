@@ -11,12 +11,12 @@ TOOLS:
    - radius: <integer>: Search radius, default 50.
    - pattern: <string>: Specific text token or pattern to search.
 
-3. file_valid: Validate content syntax and structural balance of the current cluster chain.
-   - chain: <array of integers>: Current candidate cluster chain.
-   - lang: <string>: Target file language like c, cpp, cs, py.
+3. file_valid: Validate content syntax and structural balance of the cluster chain.
+   - chain: <array of integers or ranges>: Cluster list like [114, 115] or cluster ranges like [[114, 701]] or [[114, 1322], [1324, 2532]].
+   - lang: <string>: Target file language like pptx, py, c.
 
 4. file_export: Persist verified file payload and compute SHA-256 checksum.
-   - chain: <array of integers>: Complete verified cluster chain.
+   - chain: <array of integers or ranges>: Complete cluster list or cluster ranges like [[114, 1322], [1324, 2532]].
    - name: <string>: Recovered file name.
    - size: <integer>: Exact byte length of the deleted file.
 
@@ -106,7 +106,10 @@ SCHEMA = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "chain": {"type": "array", "items": {"type": "integer"}},
+                    "chain": {
+                        "type": "array",
+                        "description": "Cluster list or ranges like [[114, 701]] or [[114, 1322], [1324, 2532]]"
+                    },
                     "lang": {"type": "string"}
                 },
                 "required": ["chain", "lang"]
@@ -121,7 +124,10 @@ SCHEMA = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "chain": {"type": "array", "items": {"type": "integer"}},
+                    "chain": {
+                        "type": "array",
+                        "description": "Cluster list or ranges like [[114, 1322], [1324, 2532]]"
+                    },
                     "name": {"type": "string"},
                     "size": {"type": "integer"}
                 },

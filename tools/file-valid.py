@@ -309,20 +309,47 @@ def parse_chain(args, fallback_chain=None):
     if raw is None:
         raw = fallback_chain or []
 
-    if isinstance(raw, (int, str)):
+    if isinstance(raw, str):
         try:
-            return [int(raw)]
+            parsed = json.loads(raw)
+            if isinstance(parsed, (list, int)):
+                raw = parsed
+        except Exception:
+            pass
+
+    if isinstance(raw, str):
+        cleaned = raw.strip("[]() ")
+        if ".." in cleaned:
+            parts = [p.strip() for p in cleaned.split("..", 1)]
+            try:
+                s, e = int(parts[0]), int(parts[1])
+                return list(range(s, e + 1)) if s <= e else list(range(s, e - 1, -1))
+            except Exception:
+                pass
+        try:
+            val = int(cleaned)
+            if fallback_chain and val == fallback_chain[-1] + 1:
+                return list(fallback_chain) + [val]
+            return [val]
         except Exception:
             return []
 
+    if isinstance(raw, int):
+        if fallback_chain and raw == fallback_chain[-1] + 1:
+            return list(fallback_chain) + [raw]
+        return [raw]
+
     flat = []
     if isinstance(raw, list):
-        if len(raw) == 2 and isinstance(raw[0], (int, str)) and isinstance(raw[1], (int, str)) and "range" in args and not args.get("chain"):
+        if len(raw) == 2 and all(isinstance(x, (int, str)) for x in raw):
             try:
                 s, e = int(raw[0]), int(raw[1])
-                return list(range(s, e + 1)) if s <= e else list(range(s, e - 1, -1))
+                if "range" in args and not args.get("chain"):
+                    return list(range(s, e + 1)) if s <= e else list(range(s, e - 1, -1))
+                if fallback_chain and s == fallback_chain[0] and e >= fallback_chain[-1]:
+                    return list(range(s, e + 1)) if s <= e else list(range(s, e - 1, -1))
             except Exception:
-                return []
+                pass
 
         for item in raw:
             if isinstance(item, int):
@@ -351,15 +378,15 @@ def parse_chain(args, fallback_chain=None):
     return flat
 
 
-def execute(disk, info, args, default_lang="c", target_size=None, needed=None):
-    chain = parse_chain(args)
+def execute(disk, info, args, default_lang="c", target_size=None, needed=None, fallback_chain=None):
+    chain = parse_chain(args, fallback_chain=fallback_chain)
     if not chain:
         return "Error: chain parameter is empty."
     lang = args.get("lang") or default_lang
     data_lba = info.get("data_lba", 0)
     spc = info.get("spc", 1)
     bps = info.get("bps", 512)
-    c_repr = f"[{chain[0]}..{chain[-1]}] {len(chain)} clusters" if len(chain) > 10 else str(chain)
+    c_repr = f"[{chain[0]}..{chain[-1]}] {len(chain)} clusters" if len(chain) > 40 else str(chain)
     parts = []
     for i, c in enumerate(chain):
         c_bytes = disk.cluster(c, data_lba, spc, bps)

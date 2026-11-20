@@ -49,6 +49,25 @@ def extract_runs(disk, runs, sectors_per_cluster, bytes_per_sector):
     return b"".join(parts)
 
 
+def format_chain_disp(chain):
+    if not chain:
+        return "[]"
+    if len(chain) <= 40:
+        return str(chain)
+    ranges = []
+    start = chain[0]
+    prev = chain[0]
+    for c in chain[1:]:
+        if c == prev + 1:
+            prev = c
+        else:
+            ranges.append([start, prev])
+            start = c
+            prev = c
+    ranges.append([start, prev])
+    return json.dumps(ranges)
+
+
 def recover_fat_multi(disk, item, info, bot, log):
     cluster_size = info["csize"]
     sectors_per_cluster = info["spc"]
@@ -184,25 +203,33 @@ def recover_fat_multi(disk, item, info, bot, log):
         elif tool in ["disk_read", "read_cluster", "read"]:
             obs = disk_read.execute(disk, info, args, chain=chain)
             c = args.get("cluster")
+            if not isinstance(c, int):
+                try:
+                    c = int(c)
+                except Exception:
+                    c = None
             if isinstance(c, int) and c not in chain:
                 val_res = file_valid.execute(disk, info, {"chain": chain + [c], "lang": lang}, needed=needed)
                 if " is VALID" in val_res and "INVALID" not in val_res:
-                    obs += f"\nValidation check: cluster {c} connects cleanly with chain {chain}. To confirm, call file_valid with chain {chain + [c]}."
+                    c_disp = format_chain_disp(chain)
+                    cand_chain = chain + [c]
+                    cand_disp = format_chain_disp(cand_chain)
+                    obs += f"\nValidation check: cluster {c} connects cleanly with chain {c_disp}. To confirm, call file_valid with chain {cand_disp}."
                 else:
                     obs += f"\nValidation warning: cluster {c} failed syntax verification: {val_res}"
         elif tool in ["file_valid", "validate_file", "validate"]:
             tool_lang = args.get("lang") or lang
-            obs = file_valid.execute(disk, info, args, default_lang=tool_lang, target_size=size, needed=needed)
+            obs = file_valid.execute(disk, info, args, default_lang=tool_lang, target_size=size, needed=needed, fallback_chain=chain)
             if " is VALID" in obs and "INVALID" not in obs:
                 chain_arg = file_valid.parse_chain(args, fallback_chain=chain)
                 if isinstance(chain_arg, list) and len(chain_arg) > len(chain):
                     if chain_arg[:len(chain)] == chain or (chain and chain_arg[0] == chain[0]):
                         chain = list(chain_arg)
                         lang = tool_lang
-                        c_disp = f"[{chain[0]}..{chain[-1]}] total={len(chain)}/{needed}" if len(chain) > 10 else str(chain)
+                        c_disp = f"{format_chain_disp(chain)} total={len(chain)}/{needed}" if len(chain) > 40 else str(chain)
                         log.info(f"Observation: Cluster confirmed, chain updated -> {c_disp}")
             else:
-                c_disp = f"[{chain[0]}..{chain[-1]}] total={len(chain)}/{needed}" if len(chain) > 10 else str(chain)
+                c_disp = f"{format_chain_disp(chain)} total={len(chain)}/{needed}" if len(chain) > 40 else str(chain)
                 log.info(f"Observation: Cluster rejected or invalid. Current chain remains: {c_disp}")
                 obs += f"\nCandidate cluster rejected. Chain remains {c_disp}. Please inspect other clusters."
         
@@ -217,11 +244,11 @@ def recover_fat_multi(disk, item, info, bot, log):
             if is_valid and len(chain_arg) == needed:
                 chain = list(chain_arg)
                 lang = export_lang
-                c_disp = f"[{chain[0]}..{chain[-1]}] total={len(chain)}/{needed}" if len(chain) > 10 else str(chain)
+                c_disp = f"{format_chain_disp(chain)} total={len(chain)}/{needed}" if len(chain) > 40 else str(chain)
                 log.info(f"Observation: Chain {c_disp} verified 100% for export.")
                 return test_payload, chain
             else:
-                c_disp = f"[{chain[0]}..{chain[-1]}] total={len(chain)}/{needed}" if len(chain) > 10 else str(chain)
+                c_disp = f"{format_chain_disp(chain)} total={len(chain)}/{needed}" if len(chain) > 40 else str(chain)
                 obs = f"Validation failed for export: {err}. Chain {c_disp} is invalid. Current chain remains {c_disp}. Continue searching."
                 log.info(f"Observation: {obs}")
         else:
@@ -230,7 +257,7 @@ def recover_fat_multi(disk, item, info, bot, log):
         state.record(step, tool, args, obs[:150])
         log.info(f"Observation: {obs}")
 
-        c_disp = f"[{chain[0]}..{chain[-1]}] total={len(chain)}/{needed} tail={chain[-1]}" if len(chain) > 10 else str(chain)
+        c_disp = f"{format_chain_disp(chain)} total={len(chain)}/{needed} tail={chain[-1]}" if len(chain) > 40 else str(chain)
         next_user_prompt = prompt.USER.format(
             name=name,
             lang=lang,
@@ -262,8 +289,9 @@ def recover_fat_multi(disk, item, info, bot, log):
                 return test_payload, chain
             else:
                 bad_cluster = chain.pop()
-                log.info(f"Validation failed for complete chain with cluster {bad_cluster}: {err}. Rolling back to chain {chain}.")
-                obs += f"\nValidation check failed for complete file: {err}. Cluster {bad_cluster} rolled back. Chain is now {chain}. Try another candidate."
+                c_disp = f"[{chain[0]}..{chain[-1]}]" if len(chain) > 40 else str(chain)
+                log.info(f"Validation failed for complete chain with cluster {bad_cluster}: {err}. Rolling back to chain {c_disp}.")
+                obs += f"\nValidation check failed for complete file: {err}. Cluster {bad_cluster} rolled back. Chain is now {c_disp}. Try another candidate."
 
     final_payload = b"".join(
         disk.cluster(cid, data_lba, sectors_per_cluster, bytes_per_sector)
