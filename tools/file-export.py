@@ -63,8 +63,11 @@ def execute(disk, info, args, fallback_name=None, fallback_size=None):
     spc = info.get("spc", 1)
     bps = info.get("bps", 512)
     parts = []
-    for c in chain:
-        parts.append(disk.cluster(c, data_lba, spc, bps))
+    for i, c in enumerate(chain):
+        c_bytes = disk.cluster(c, data_lba, spc, bps)
+        if i < len(chain) - 1 and len(c_bytes.rstrip(b"\x00")) < 64:
+            return f"Validation failed for export: Cluster {c} is truncated or zeroed out."
+        parts.append(c_bytes)
     payload = b"".join(parts)
     res = save(payload, name, size=size, chain=chain)
     return f"File exported successfully: path={res['path']} size={res['size']} sha256={res['sha256']}"

@@ -127,6 +127,72 @@ def validate_zip(content):
         return False, f"ZIP validation error: {e}"
 
 
+def validate_zip_stream(raw):
+    if len(raw) < 4:
+        return True, None
+    if not raw.startswith(b"PK\x03\x04"):
+        return False, "Invalid ZIP header: missing PK header"
+    idx = 0
+    while idx + 30 <= len(raw):
+        sig = raw[idx:idx+4]
+        if sig in (b"PK\x01\x02", b"PK\x05\x06"):
+            break
+        if sig != b"PK\x03\x04":
+            return False, f"Corrupted ZIP stream at offset {idx}"
+        flags, method = struct.unpack_from("<HH", raw, idx + 6)
+        hdr_crc, hdr_csize, hdr_usize = struct.unpack_from("<III", raw, idx + 14)
+        nlen, elen = struct.unpack_from("<HH", raw, idx + 26)
+        fname = raw[idx+30:idx+30+nlen].decode("utf-8", errors="ignore")
+        data_start = idx + 30 + nlen + elen
+        if data_start > len(raw):
+            break
+        has_data_desc = (flags & 0x08) != 0
+        if method == 0:
+            csize = hdr_csize
+            if data_start + csize <= len(raw):
+                calc_crc = zlib.crc32(raw[data_start:data_start+csize]) & 0xFFFFFFFF
+                if hdr_crc != 0 and calc_crc != hdr_crc:
+                    return False, f"Corrupted file inside archive: {fname} CRC mismatch"
+                idx = data_start + csize
+            else:
+                break
+        elif method == 8:
+            d = zlib.decompressobj(-15)
+            chunk = raw[data_start:]
+            try:
+                decomp = d.decompress(chunk)
+            except Exception as e:
+                return False, f"Corrupted deflate stream inside archive: {fname}: {e}"
+            if d.eof:
+                consumed = len(chunk) - len(d.unused_data)
+                curr_idx = data_start + consumed
+                calc_crc = zlib.crc32(decomp) & 0xFFFFFFFF
+                expected_crc = hdr_crc
+                if has_data_desc and curr_idx + 4 <= len(raw) and raw[curr_idx:curr_idx+4] == b"PK\x07\x08":
+                    if curr_idx + 16 <= len(raw):
+                        expected_crc = struct.unpack_from("<I", raw, curr_idx + 4)[0]
+                        curr_idx += 16
+                elif has_data_desc and curr_idx + 12 <= len(raw) and raw[curr_idx:curr_idx+4] not in (b"PK\x03\x04", b"PK\x01\x02", b"PK\x05\x06"):
+                    expected_crc = struct.unpack_from("<I", raw, curr_idx)[0]
+                    curr_idx += 12
+                if expected_crc != 0 and calc_crc != expected_crc:
+                    return False, f"Corrupted file inside archive: {fname} CRC mismatch"
+                idx = curr_idx
+            else:
+                break
+        else:
+            break
+    if b"PK\x05\x06" in raw:
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+                bad = zf.testzip()
+                if bad is not None:
+                    return False, f"Corrupted file inside archive: {bad}"
+        except Exception as e:
+            return False, f"ZIP archive error: {e}"
+    return True, None
+
+
 def validate_ole(content):
     raw = content if isinstance(content, (bytes, bytearray)) else content.encode("utf-8", errors="ignore")
     if len(raw) < 512 or not raw.startswith(b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1"):
@@ -175,6 +241,13 @@ def validate_jpg(content):
         return False, "Invalid JPEG SOI header"
     if b"\xFF\xD9" not in raw:
         return False, "Missing JPEG EOI marker"
+    if len(raw) > 512:
+        try:
+            from PIL import Image
+            img = Image.open(io.BytesIO(raw))
+            img.verify()
+        except Exception as e:
+            return False, f"Corrupted JPEG image: {e}"
     return True, None
 
 
@@ -204,7 +277,7 @@ def validate(content, lang):
     elif lang == "pdf":
         return validate_pdf(raw)
 
-    text = raw.decode("utf-8", errors="ignore")
+    text = raw.decode("utf-8", errors="ignore").rstrip("\x00")
 
     if lang == "py":
         return validate_python(text)
@@ -244,14 +317,17 @@ def execute(disk, info, args, default_lang="c", target_size=None, needed=None):
     data_lba = info.get("data_lba", 0)
     spc = info.get("spc", 1)
     bps = info.get("bps", 512)
+    c_repr = f"[{chain[0]}..{chain[-1]}] {len(chain)} clusters" if len(chain) > 10 else str(chain)
     parts = []
-    for c in chain:
-        parts.append(disk.cluster(c, data_lba, spc, bps))
+    for i, c in enumerate(chain):
+        c_bytes = disk.cluster(c, data_lba, spc, bps)
+        is_last = (needed is not None and len(chain) == needed and i == len(chain) - 1)
+        if not is_last and len(c_bytes.rstrip(b"\x00")) < 64:
+            return f"Chain {c_repr} is INVALID for {lang}. Cluster {c} is truncated or zeroed out."
+        parts.append(c_bytes)
     payload = b"".join(parts)
     if target_size:
         payload = payload[:target_size]
-
-    c_repr = f"[{chain[0]}..{chain[-1]}] {len(chain)} clusters" if len(chain) > 10 else str(chain)
 
     if needed and len(chain) == needed:
         ok, err = validate(payload, lang)
@@ -259,8 +335,13 @@ def execute(disk, info, args, default_lang="c", target_size=None, needed=None):
             return f"Chain {c_repr} is VALID for {lang}. Complete file 100%."
         return f"Chain {c_repr} is INVALID for {lang}. Error: {err}"
 
-    code_langs = {"c", "cpp", "h", "cs", "rs", "rust", "go", "golang", "js", "jsx", "ts", "tsx", "java", "py", "json"}
     norm_lang = lang.lower().lstrip(".")
+    if norm_lang in ("zip", "docx", "xlsx", "pptx"):
+        ok, err = validate_zip_stream(payload)
+        if not ok:
+            return f"Chain {c_repr} is INVALID for {lang}. {err}"
+
+    code_langs = {"c", "cpp", "h", "cs", "rs", "rust", "go", "golang", "js", "jsx", "ts", "tsx", "java", "py", "json"}
     if norm_lang in code_langs:
         ok, err = check_brackets(payload.decode("utf-8", errors="ignore"))
         if not ok and err and "Unmatched" in err:

@@ -1,3 +1,4 @@
+import time
 from .llm import LLM
 from . import prompt
 from . import state
@@ -26,8 +27,16 @@ def compact(llm=None, max_history=10):
     lines = [f"[{h.get('step')}] {h.get('action')}: {h.get('result')}" for h in old]
     blob = "\n".join(lines)
 
-    text, tin, tout = bot.ask(prompt.SYSTEM, prompt.COMPACT.format(history=blob))
-    state.token(tin, tout)
+    text = None
+    for attempt in range(5):
+        text, tin, tout = bot.ask(prompt.SYSTEM, prompt.COMPACT.format(history=blob))
+        state.token(tin, tout)
+        if isinstance(text, list):
+            text = str(text)
+        if text and not text.startswith("[!]"):
+            break
+        if attempt < 4:
+            time.sleep(4 * (2 ** attempt))
 
     if text and not text.startswith("[!]"):
         summary = (summary + "\n" + text).strip()

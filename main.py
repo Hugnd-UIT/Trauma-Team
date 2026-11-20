@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import json
 import importlib
 
@@ -85,18 +86,54 @@ def recover_fat_multi(disk, item, info, bot, log):
         step += 1
         sys.stdout.flush()
 
-        text_response, tokens_in, tokens_out = bot.call(messages)
-        state.token(tokens_in, tokens_out)
+        text_response = None
+        for attempt in range(5):
+            text_response, tokens_in, tokens_out = bot.call(messages)
+            state.token(tokens_in, tokens_out)
 
-        if not text_response or text_response.startswith("[!]"):
-            log.info(f"Error: {text_response}")
+            is_err = not text_response or (isinstance(text_response, str) and text_response.startswith("[!]"))
+            if not is_err:
+                break
+
+            if attempt < 4:
+                wait_sec = 4 * (2 ** attempt)
+                err_detail = text_response if text_response else "Empty response"
+                log.info(f"LLM issue: {err_detail}. Retrying in {wait_sec}s attempt {attempt + 1}/5...")
+                time.sleep(wait_sec)
+
+        if not text_response:
+            log.info("Error: Empty response from LLM after 5 retries")
+            break
+
+        if isinstance(text_response, str) and text_response.startswith("[!]"):
+            log.info(f"Error: {text_response} after 5 retries")
             break
 
         thought = ""
         tool = ""
         args = {}
 
-        if isinstance(text_response, str):
+        if isinstance(text_response, list) and text_response:
+            first_call = text_response[0]
+            if hasattr(first_call, "function"):
+                tool = getattr(first_call.function, "name", "")
+                raw_args = getattr(first_call.function, "arguments", "{}")
+            elif isinstance(first_call, dict) and "function" in first_call:
+                tool = first_call["function"].get("name", "")
+                raw_args = first_call["function"].get("arguments", "{}")
+            else:
+                tool = ""
+                raw_args = "{}"
+            if isinstance(raw_args, str):
+                try:
+                    args = json.loads(raw_args)
+                except Exception:
+                    args = {}
+            elif isinstance(raw_args, dict):
+                args = raw_args
+            text_response = json.dumps({"tool": tool, "args": args})
+
+        elif isinstance(text_response, str):
             clean_resp = text_response.strip()
             if clean_resp.startswith("```"):
                 resp_lines = clean_resp.splitlines()
@@ -227,7 +264,7 @@ def recover_fat_multi(disk, item, info, bot, log):
 
         approx_tokens = sum(len(str(m.get("content", ""))) for m in messages) // 3
         if (tokens_in > 20000 or approx_tokens > 20000) and len(state.history) > 2:
-            log.info(f"Context reached {max(tokens_in, approx_tokens)} tokens, exceeding 20k threshold. Compacting history.")
+            log.info(f"Compacting ... ")
             context.compact(bot, max_history=2)
             recent_turns = messages[-2:] if len(messages) >= 2 else []
             messages = context.build(next_user_prompt)

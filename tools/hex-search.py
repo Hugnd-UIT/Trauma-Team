@@ -64,7 +64,7 @@ def find_candidates(disk, current_cluster, data_lba, sectors_per_cluster, bytes_
             continue
 
         stripped_cluster_bytes = raw_cluster_bytes.rstrip(b"\x00")
-        if not stripped_cluster_bytes:
+        if len(stripped_cluster_bytes) < 64:
             continue
 
         cluster_entropy = entropy(stripped_cluster_bytes)

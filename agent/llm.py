@@ -24,42 +24,33 @@ class LLM:
     def call(self, messages, tools=None):
         if not self.client:
             return "[!] OpenAI API key not configured.", 0, 0
-        last = None
-        for i in range(5):
-            try:
-                kwargs = {
-                    "model": self.model,
-                    "messages": messages,
-                    "temperature": self.temp,
-                    "top_p": self.top,
-                    "max_tokens": self.tokens,
-                    "timeout": 60,
-                }
-                if tools:
-                    kwargs["tools"] = tools
+        try:
+            kwargs = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": self.temp,
+                "top_p": self.top,
+                "max_tokens": self.tokens,
+                "timeout": 60,
+            }
+            if tools:
+                kwargs["tools"] = tools
 
-                res = self.client.chat.completions.create(**kwargs)
-                if not getattr(res, "choices", None):
-                    last = "Empty choices"
-                    time.sleep(1 + random.random())
-                    continue
+            res = self.client.chat.completions.create(**kwargs)
+            if not getattr(res, "choices", None):
+                return "", 0, 0
 
-                choice = res.choices[0].message
-                tin = getattr(res.usage, "prompt_tokens", 0) if hasattr(res, "usage") else 0
-                tout = getattr(res.usage, "completion_tokens", 0) if hasattr(res, "usage") else 0
+            choice = res.choices[0].message
+            tin = getattr(res.usage, "prompt_tokens", 0) if hasattr(res, "usage") else 0
+            tout = getattr(res.usage, "completion_tokens", 0) if hasattr(res, "usage") else 0
 
-                # Native OpenAI tool calls support
-                if getattr(choice, "tool_calls", None):
-                    return choice.tool_calls, tin, tout
+            if getattr(choice, "tool_calls", None):
+                return choice.tool_calls, tin, tout
 
-                return choice.content or "", tin, tout
+            return choice.content or "", tin, tout
 
-            except Exception as e:
-                last = e
-                wait = min(2 ** i, 15) + random.random()
-                time.sleep(wait)
-
-        return f"[!] LLM error: {last}", 0, 0
+        except Exception as e:
+            return f"[!] LLM error: {e}", 0, 0
 
     def ask(self, system, user):
         msg = [
