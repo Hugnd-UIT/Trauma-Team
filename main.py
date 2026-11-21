@@ -14,6 +14,7 @@ file_valid = importlib.import_module("tools.file-valid")
 file_export = importlib.import_module("tools.file-export")
 detect = importlib.import_module("src.detect")
 build = importlib.import_module("src.build")
+parse_mod = importlib.import_module("src.parse")
 router = importlib.import_module("file-systems.router")
 
 from agent.llm import LLM
@@ -338,87 +339,112 @@ def run(img_path):
         log.info(b_line)
 
     with disk_read.Disk(img_path) as disk:
-        info = detect.detect(disk)
-        fs_type = info.get("fs", "UNKNOWN")
+        partitions = parse_mod.scan(disk)
         log.info(f"Image: {img_path}")
-        log.info(f"File system: {fs_type}")
+        if len(partitions) > 1 or partitions[0].get("scheme") in ("MBR", "GPT"):
+            scheme = partitions[0].get("scheme")
+            log.info(f"Partition table: {scheme} - {len(partitions)} partition")
+            for p in partitions:
+                p_label = p.get("name") or f"Partition {p['index']}"
+                log.info(f"├── {p_label}: {p.get('fs', 'UNKNOWN')} at LBA {p['start_lba']}")
 
-        state.init(image=img_path, fs=fs_type)
-        items = router.scan(disk, info)
-        log.info(f"Directory: {len(items)}")
+        total_recovered = 0
+        total_deleted = 0
+        all_results = []
 
-        non_sys = [item for item in items if not item["name"].startswith("$")]
-        tree_lines = build.render(build.build_dict(non_sys))
-        for t_line in tree_lines:
-            log.info(t_line)
+        for part in partitions:
+            disk.set_partition(part["start_lba"])
+            info = detect.detect(disk)
+            fs_type = info.get("fs", "UNKNOWN")
+            p_label = part.get("name") or f"partition {part['index']}"
 
-        deleted_files = [item for item in items if item.get("deleted") and not item.get("is_dir")]
-        bot = LLM()
-        results = []
-        save_info_report(img_path, info, items, results)
-
-        for item in deleted_files:
-            name = item["name"]
-            size = item.get("size", 0)
-            lang = item.get("lang") or "txt"
-            chain = []
-            payload = b""
-
-            log.info(f"=== Processing: {name} - {size} bytes - lang: {lang} ===")
-
-            if item.get("carved") and item.get("payload") is not None:
-                payload = item["payload"]
-                chain = [item.get("cluster", 0)]
-                log.info(f"Method: Binary raw carve - {lang}")
-
-            elif item.get("resident") and item.get("resident_data") is not None:
-                payload = item["resident_data"][:size]
-                chain = ["Resident"]
-                log.info("Method: NTFS single cluster")
-
-            elif fs_type == "NTFS" and item.get("runs"):
-                runs = item["runs"]
-                payload = extract_runs(disk, runs, info["spc"], info["bps"])[:size]
-                chain = [r[1] for r in runs]
-                log.info("Method: NTFS multi clusters")
-
-            elif fs_type.startswith("FAT") and size <= info["csize"]:
-                single_cluster = item.get("cluster", 0)
-                payload = disk.cluster(single_cluster, info["data_lba"], info["spc"], info["bps"])[:size]
-                chain = [single_cluster]
-                log.info("Method: FAT single cluster")
-
-            elif fs_type.startswith("FAT") and size > info["csize"]:
-                log.info("Method: FAT multi clusters")
-                payload, chain = recover_fat_multi(disk, item, info, bot, log)
-                if chain:
-                    log.info(f"Final chain: {chain}")
-
-            if not chain or not payload:
-                log.info("[!] FAILED: Unrecoverable!")
-                state.update(name, "failed", chain=[])
-                save_info_report(img_path, info, items, results)
-                continue
-
-            valid, err = file_valid.validate(payload, lang)
-            if not valid:
-                log.info(f"[!] FAILED: AST verification failed: {err}")
-                state.update(name, "failed", chain=chain)
-                save_info_report(img_path, info, items, results)
-                continue
+            if len(partitions) > 1 or part.get("scheme") in ("MBR", "GPT"):
+                log.info(f"=== Processing {p_label} [{fs_type}] at LBA {part['start_lba']} ===")
             else:
-                log.info(f"[+] Done. Verified: PASSED 100% - {lang} grammar valid")
+                log.info(f"File system: {fs_type}")
 
-            res = file_export.save(payload, name, size=size, chain=chain)
-            state.update(name, "done", chain=chain)
-            results.append(res)
-            log.info(f"Saved -> {res['path']}")
-            log.info(f"SHA-256: {res['sha256']}")
+            state.init(image=img_path, fs=fs_type)
+            items = router.scan(disk, info)
+            log.info(f"Directory: {len(items)}")
+
+            non_sys = [item for item in items if not item["name"].startswith("$")]
+            tree_lines = build.render(build.build_dict(non_sys))
+            for t_line in tree_lines:
+                log.info(t_line)
+
+            deleted_files = [item for item in items if item.get("deleted") and not item.get("is_dir")]
+            total_deleted += len(deleted_files)
+            bot = LLM()
+            results = []
             save_info_report(img_path, info, items, results)
 
-        save_info_report(img_path, info, items, results)
+            for item in deleted_files:
+                name = item["name"]
+                size = item.get("size", 0)
+                lang = item.get("lang") or "txt"
+                chain = []
+                payload = b""
+
+                log.info(f"=== Processing: {name} - {size} bytes - lang: {lang} ===")
+
+                if item.get("carved") and item.get("payload") is not None:
+                    payload = item["payload"]
+                    chain = [item.get("cluster", 0)]
+                    log.info(f"Method: Binary raw carve - {lang}")
+
+                elif item.get("resident") and item.get("resident_data") is not None:
+                    payload = item["resident_data"][:size]
+                    chain = ["Resident"]
+                    log.info("Method: NTFS single cluster")
+
+                elif fs_type == "NTFS" and item.get("runs"):
+                    runs = item["runs"]
+                    payload = extract_runs(disk, runs, info["spc"], info["bps"])[:size]
+                    chain = []
+                    for rlen, lcn in runs:
+                        chain.extend(range(lcn, lcn + rlen))
+                    log.info("Method: NTFS multi clusters")
+
+                elif fs_type.startswith("FAT") and size <= info["csize"]:
+                    single_cluster = item.get("cluster", 0)
+                    payload = disk.cluster(single_cluster, info["data_lba"], info["spc"], info["bps"])[:size]
+                    chain = [single_cluster]
+                    log.info("Method: FAT single cluster")
+
+                elif fs_type.startswith("FAT") and size > info["csize"]:
+                    log.info("Method: FAT multi clusters")
+                    payload, chain = recover_fat_multi(disk, item, info, bot, log)
+                    if chain:
+                        log.info(f"Final chain: {chain}")
+
+                if not chain or not payload:
+                    log.info("[!] FAILED: Unrecoverable!")
+                    state.update(name, "failed", chain=[])
+                    save_info_report(img_path, info, items, results)
+                    continue
+
+                valid, err = file_valid.validate(payload, lang)
+                if not valid:
+                    log.info(f"[!] FAILED: AST verification failed: {err}")
+                    state.update(name, "failed", chain=chain)
+                    save_info_report(img_path, info, items, results)
+                    continue
+                else:
+                    log.info(f"[+] Done. Verified: PASSED 100% - {lang} grammar valid")
+
+                res = file_export.save(payload, name, size=size, chain=chain)
+                state.update(name, "done", chain=chain)
+                results.append(res)
+                all_results.append(res)
+                total_recovered += 1
+                log.info(f"Saved -> {res['path']}")
+                log.info(f"SHA-256: {res['sha256']}")
+                save_info_report(img_path, info, items, results)
+
+            save_info_report(img_path, info, items, results)
+
         log.info("=== MISSION COMPLETE ===")
-        log.info(f"[+] Done. Files recovered: {len(results)} / {len(deleted_files)}")
+        log.info(f"[+] Done. Files recovered: {total_recovered} / {total_deleted}")
 
 
 if __name__ == "__main__":

@@ -152,5 +152,60 @@ class TestFileSystems(unittest.TestCase):
             self.assertGreater(len(records), 0)
 
 
+    def test_parse_mbr_and_gpt(self):
+        parse_mod = importlib.import_module("src.parse")
+
+        mbr_disk_bytes = bytearray(2048 * 512 + 512)
+        mbr_disk_bytes[510:512] = b"\x55\xaa"
+        struct.pack_into("<B", mbr_disk_bytes, 0x1BE, 0x80)
+        struct.pack_into("<B", mbr_disk_bytes, 0x1BE + 4, 0x0C)
+        struct.pack_into("<I", mbr_disk_bytes, 0x1BE + 8, 2048)
+        struct.pack_into("<I", mbr_disk_bytes, 0x1BE + 12, 1000)
+
+        vbr_p1 = bytearray(512)
+        vbr_p1[0x52:0x5A] = b"FAT32   "
+        struct.pack_into("<H", vbr_p1, 0x0B, 512)
+        vbr_p1[0x0D] = 8
+        struct.pack_into("<H", vbr_p1, 0x0E, 32)
+        vbr_p1[0x10] = 2
+        struct.pack_into("<I", vbr_p1, 0x24, 128)
+        struct.pack_into("<I", vbr_p1, 0x2C, 2)
+        vbr_p1[510:512] = b"\x55\xaa"
+        mbr_disk_bytes[2048 * 512:2048 * 512 + 512] = vbr_p1
+
+        dummy_mbr = DummyDisk(bytes(mbr_disk_bytes), total_size=len(mbr_disk_bytes))
+        dummy_mbr.set_partition = lambda base_lba=0: None
+        dummy_mbr.sector = lambda lba, size=512: bytes(mbr_disk_bytes[lba * size:(lba + 1) * size])
+
+        mbr_parts = parse_mod.scan(dummy_mbr)
+        self.assertEqual(len(mbr_parts), 1)
+        self.assertEqual(mbr_parts[0]["scheme"], "MBR")
+        self.assertEqual(mbr_parts[0]["start_lba"], 2048)
+        self.assertEqual(mbr_parts[0]["fs"], "FAT32")
+
+        gpt_disk_bytes = bytearray(34 * 512 + 512)
+        gpt_disk_bytes[512:520] = b"EFI PART"
+        struct.pack_into("<I", gpt_disk_bytes, 512 + 0x08, 0x00010000)
+        struct.pack_into("<I", gpt_disk_bytes, 512 + 0x0C, 92)
+        struct.pack_into("<Q", gpt_disk_bytes, 512 + 0x48, 2)
+        struct.pack_into("<I", gpt_disk_bytes, 512 + 0x50, 128)
+        struct.pack_into("<I", gpt_disk_bytes, 512 + 0x54, 128)
+
+        gpt_entry = bytearray(128)
+        gpt_entry[:16] = b"\x01" * 16
+        struct.pack_into("<Q", gpt_entry, 0x20, 2048)
+        struct.pack_into("<Q", gpt_entry, 0x28, 4095)
+        gpt_disk_bytes[2 * 512:2 * 512 + 128] = gpt_entry
+
+        dummy_gpt = DummyDisk(bytes(gpt_disk_bytes), total_size=len(gpt_disk_bytes))
+        dummy_gpt.set_partition = lambda base_lba=0: None
+        dummy_gpt.sector = lambda lba, size=512: bytes(gpt_disk_bytes[lba * size:(lba + 1) * size])
+
+        gpt_parts = parse_mod.scan(dummy_gpt)
+        self.assertEqual(len(gpt_parts), 1)
+        self.assertEqual(gpt_parts[0]["scheme"], "GPT")
+        self.assertEqual(gpt_parts[0]["start_lba"], 2048)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

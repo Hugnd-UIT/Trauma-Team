@@ -2,11 +2,17 @@ import os
 
 
 class Disk:
-    def __init__(self, path):
+    def __init__(self, path, base_lba=0):
         self.path = path
+        self.base_lba = base_lba
+        self.base_offset = base_lba * 512
         self.fp = None
         self.total = 0
         self.open()
+
+    def set_partition(self, base_lba=0):
+        self.base_lba = base_lba
+        self.base_offset = base_lba * 512
 
     def open(self):
         if not os.path.exists(self.path):
@@ -15,10 +21,11 @@ class Disk:
         self.total = os.path.getsize(self.path)
 
     def read(self, offset, size=512):
-        if offset < 0 or offset >= self.total:
+        actual = self.base_offset + offset
+        if actual < 0 or actual >= self.total:
             return b""
-        self.fp.seek(offset)
-        return self.fp.read(min(size, self.total - offset))
+        self.fp.seek(actual)
+        return self.fp.read(min(size, self.total - actual))
 
     def sector(self, lba, size=512):
         offset = lba * size
@@ -37,7 +44,7 @@ class Disk:
         return self.read(offset, csize)
 
     def size(self):
-        return self.total
+        return max(0, self.total - self.base_offset)
 
     def close(self):
         if self.fp and not self.fp.closed:
