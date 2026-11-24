@@ -45,13 +45,15 @@ def validate_python(code_str):
         return False, f"SyntaxError: {e.msg} at line {e.lineno}"
 
 
-def validate_c(code_str):
+def validate_c(code_str, strict_c=False):
     ok, err = check_brackets(code_str)
     if not ok:
         return False, err
     has_keywords = bool(re.search(r"\b(int|void|char|return|if|for|while|include|struct|class)\b", code_str))
     if not has_keywords:
         return False, "Missing C/C++ language keywords"
+    if strict_c and re.search(r"\b(class\s+\w+|namespace\s+\w+|<iostream>|<vector>|std::)\b", code_str):
+        return False, "C++ syntax detected in C source"
     return True, None
 
 
@@ -281,8 +283,10 @@ def validate(content, lang):
 
     if lang == "py":
         return validate_python(text)
-    elif lang in ("c", "cpp", "h"):
-        return validate_c(text)
+    elif lang == "c":
+        return validate_c(text, strict_c=True)
+    elif lang in ("cpp", "h"):
+        return validate_c(text, strict_c=False)
     elif lang == "cs":
         return validate_cs(text)
     elif lang in ("rs", "rust"):
@@ -306,8 +310,9 @@ def parse_chain(args, fallback_chain=None):
         raw = args.get("ranges")
     elif not raw and "range" in args:
         raw = args.get("range")
+
     if raw is None:
-        raw = fallback_chain or []
+        return []
 
     if isinstance(raw, str):
         try:
@@ -328,14 +333,14 @@ def parse_chain(args, fallback_chain=None):
                 pass
         try:
             val = int(cleaned)
-            if fallback_chain and val == fallback_chain[-1] + 1:
+            if fallback_chain and val not in fallback_chain:
                 return list(fallback_chain) + [val]
             return [val]
         except Exception:
             return []
 
     if isinstance(raw, int):
-        if fallback_chain and raw == fallback_chain[-1] + 1:
+        if fallback_chain and raw not in fallback_chain:
             return list(fallback_chain) + [raw]
         return [raw]
 
@@ -344,7 +349,7 @@ def parse_chain(args, fallback_chain=None):
         if len(raw) == 2 and all(isinstance(x, (int, str)) for x in raw):
             try:
                 s, e = int(raw[0]), int(raw[1])
-                if "range" in args and not args.get("chain"):
+                if "range" in args and not any(k in args for k in ("chain", "clusters")):
                     return list(range(s, e + 1)) if s <= e else list(range(s, e - 1, -1))
                 if fallback_chain and s == fallback_chain[0] and e >= fallback_chain[-1]:
                     return list(range(s, e + 1)) if s <= e else list(range(s, e - 1, -1))
@@ -375,10 +380,20 @@ def parse_chain(args, fallback_chain=None):
                             flat.append(int(sub))
                         except Exception:
                             pass
+
+        if fallback_chain and flat:
+            if fallback_chain[0] not in flat:
+                return list(fallback_chain) + [c for c in flat if c not in fallback_chain]
+
     return flat
 
 
 def execute(disk, info, args, default_lang="c", target_size=None, needed=None, fallback_chain=None):
+    if "chain" not in args and "ranges" not in args and "range" not in args:
+        invalid_keys = [k for k in args if k not in ("lang",)]
+        key_str = f" Found unknown keys: {invalid_keys}." if invalid_keys else ""
+        return f"Error: file_valid requires 'chain' parameter with cluster list or ranges.{key_str} Example: file_valid: {{\"chain\": [[105, 201], [203, 204]]}}"
+
     chain = parse_chain(args, fallback_chain=fallback_chain)
     if not chain:
         return "Error: chain parameter is empty."
@@ -412,7 +427,10 @@ def execute(disk, info, args, default_lang="c", target_size=None, needed=None, f
 
     code_langs = {"c", "cpp", "h", "cs", "rs", "rust", "go", "golang", "js", "jsx", "ts", "tsx", "java", "py", "json"}
     if norm_lang in code_langs:
-        ok, err = check_brackets(payload.decode("utf-8", errors="ignore"))
+        text_stream = payload.decode("utf-8", errors="ignore")
+        if norm_lang == "c" and re.search(r"\b(class\s+\w+|namespace\s+\w+|<iostream>|<vector>|std::)\b", text_stream):
+            return f"Chain {c_repr} is INVALID for {lang}. C++ syntax detected in C source."
+        ok, err = check_brackets(text_stream)
         if not ok and err and "Unmatched" in err:
             return f"Chain {c_repr} is INVALID for {lang}. Rogue closing bracket: {err}"
 

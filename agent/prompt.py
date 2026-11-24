@@ -61,8 +61,8 @@ TARGET FILE:
 - Name: {name}
 - Language: {lang}
 - Size: {size} bytes
-- Clusters needed: {needed}
-- Clusters chain: {chain}
+- Needed: {needed} clusters
+- Current chain: {chain}
 - Progress: {progress}/{needed} clusters
 
 Observe the current file state and decide on the next action.

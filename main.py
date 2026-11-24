@@ -233,7 +233,10 @@ def recover_fat_multi(disk, item, info, bot, log):
             else:
                 c_disp = f"{format_chain_disp(chain)} total={len(chain)}/{needed}" if len(chain) > 40 else str(chain)
                 log.info(f"Observation: Cluster rejected or invalid. Current chain remains: {c_disp}")
-                obs += f"\nCandidate cluster rejected. Chain remains {c_disp}. Please inspect other clusters."
+                if obs.startswith("Error:"):
+                    obs += f"\nParameter error. Current chain remains {c_disp}. Call file_valid with 'chain': [...]"
+                else:
+                    obs += f"\nCandidate cluster rejected. Chain remains {c_disp}. Please inspect other clusters."
         
         elif tool in ["file_read", "read_file"]:
             tool_lang = args.get("lang") or lang
@@ -254,11 +257,15 @@ def recover_fat_multi(disk, item, info, bot, log):
                 log.info(f"Observation: Chain {c_disp} verified 100% for export.")
                 return test_payload, chain
             else:
+                arg_disp = f"{format_chain_disp(chain_arg)} total={len(chain_arg)}/{needed}" if len(chain_arg) > 40 else str(chain_arg)
                 c_disp = f"{format_chain_disp(chain)} total={len(chain)}/{needed}" if len(chain) > 40 else str(chain)
-                obs = f"Validation failed for export: {err}. Chain {c_disp} is invalid. Current chain remains {c_disp}. Continue searching."
+                obs = f"Validation failed for export: {err}. Submitted chain {arg_disp} is invalid. Current valid chain remains {c_disp}. Backtrack to remove invalid clusters and continue searching."
                 log.info(f"Observation: {obs}")
         else:
             obs = f"Unknown tool: {tool}. Available tools: hex_search, disk_read, file_valid, file_export."
+
+        if loop_alert and loop_alert not in obs:
+            obs += loop_alert
 
         state.record(step, tool, args, obs[:150])
         log.info(f"Observation: {obs}")
@@ -272,18 +279,13 @@ def recover_fat_multi(disk, item, info, bot, log):
             chain=c_disp,
             progress=len(chain)
         )
-        combined_message = f"{next_user_prompt}\n\nObservation from {tool}:\n{obs}\n\nObserve the tool result and decide on the next action."
+        clean_obs = obs if len(obs) < 2500 else obs[:2500] + "\n...[truncated observation]"
+        combined_message = f"{next_user_prompt}\n\nObservation from {tool}:\n{clean_obs}\n\nObserve the tool result and decide on the next action."
 
         messages.append({"role": "assistant", "content": text_response})
         messages.append({"role": "user", "content": combined_message})
 
-        approx_tokens = sum(len(str(m.get("content", ""))) for m in messages) // 3
-        if (tokens_in > 20000 or approx_tokens > 20000) and len(state.history) > 2:
-            log.info(f"Compacting ... ")
-            context.compact(bot, max_history=2)
-            recent_turns = messages[-2:] if len(messages) >= 2 else []
-            messages = context.build(next_user_prompt)
-            messages.extend(recent_turns)
+        messages = context.sliding_window(messages, max_turns=6)
 
         if len(chain) == needed:
             test_payload = b"".join(
@@ -349,9 +351,11 @@ def run(img_path):
         if len(partitions) > 1 or partitions[0].get("scheme") in ("MBR", "GPT"):
             scheme = partitions[0].get("scheme")
             log.info(f"Partition table: {scheme} - {len(partitions)} partition")
-            for p in partitions:
+            for i, p in enumerate(partitions):
+                is_last = (i == len(partitions) - 1)
+                prefix = "└──" if is_last else "├──"
                 p_label = p.get("name") or f"Partition {p['index']}"
-                log.info(f"├── {p_label}: {p.get('fs', 'UNKNOWN')} at LBA {p['start_lba']}")
+                log.info(f"{prefix} {p_label}: {p.get('fs', 'UNKNOWN')} at LBA {p['start_lba']}")
 
         total_recovered = 0
         total_deleted = 0

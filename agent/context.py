@@ -39,10 +39,15 @@ def compact(llm=None, max_history=10):
             time.sleep(4 * (2 ** attempt))
 
     if text and not text.startswith("[!]"):
-        summary = (summary + "\n" + text).strip()
+        summary = text.strip()[:1000]
 
     state.history = keep
     return summary
+
+
+def reset():
+    global summary
+    summary = ""
 
 
 def prune(seen_clusters):
@@ -53,6 +58,17 @@ def prune(seen_clusters):
             continue
         cleaned.append(h)
     state.history = cleaned
+
+
+def sliding_window(messages, max_turns=6):
+    if not messages:
+        return []
+    sys_msgs = [m for m in messages if m.get("role") == "system"]
+    non_sys = [m for m in messages if m.get("role") != "system"]
+    keep_count = max_turns * 2
+    if len(non_sys) > keep_count:
+        non_sys = non_sys[-keep_count:]
+    return sys_msgs + non_sys
 
 
 def build(user_msg, system_msg=None):

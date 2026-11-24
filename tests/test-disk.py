@@ -110,6 +110,13 @@ def make_fat_entry(name, cluster, size, is_dir=False, is_fat32=False, deleted=Fa
     return bytes(out)
 
 
+def lba_to_chs(lba):
+    c = min(1023, lba // (255 * 63))
+    h = (lba // 63) % 255
+    s = (lba % 63) + 1
+    return bytes([h, (s & 0x3F) | ((c >> 2) & 0xC0), c & 0xFF])
+
+
 def build_fat12(out_path="fat12.img", data_dir=None, files_subset=None):
     tree, data_dir = get_data_tree(data_dir, files_subset=files_subset)
     total_size = 20 * 1024 * 1024
@@ -125,7 +132,7 @@ def build_fat12(out_path="fat12.img", data_dir=None, files_subset=None):
     data_lba = rdet_lba + rdet_sec
 
     disk = bytearray(total_size)
-    disk[510:512] = b"\x55\xaa"
+    disk[0:3] = b"\xeb\x3c\x90"
     disk[3:11] = b"MSDOS5.0"
     struct.pack_into("<H", disk, 0x0B, bps)
     disk[0x0D] = spc
@@ -133,24 +140,27 @@ def build_fat12(out_path="fat12.img", data_dir=None, files_subset=None):
     disk[0x10] = fats
     struct.pack_into("<H", disk, 0x11, entries)
     struct.pack_into("<H", disk, 0x13, 0)
-    disk[0x15] = 0xF0
+    disk[0x15] = 0xF8
     struct.pack_into("<H", disk, 0x16, spf)
+    struct.pack_into("<H", disk, 0x18, 63)
+    struct.pack_into("<H", disk, 0x1A, 255)
+    struct.pack_into("<I", disk, 0x1C, 0)
+    struct.pack_into("<I", disk, 0x20, total_size // bps)
+    disk[0x24] = 0x80
+    disk[0x26] = 0x29
+    struct.pack_into("<I", disk, 0x27, 0x12345678)
+    disk[0x2B:0x36] = b"FAT12_VOL  "
     disk[0x36:0x3E] = b"FAT12   "
+    disk[510:512] = b"\x55\xaa"
 
     cur_cluster = 2
-    dir_clusters = {}
-    for d in sorted(tree.keys()):
-        if d != "":
-            dir_clusters[d] = cur_cluster
-            cur_cluster += 1
-
     file_clusters = {}
     file_sizes = {}
     decoy_data = b"# CORRUPTED_DECOY_PYTHON_GAP\n" * 100
 
-    for d, content in tree.items():
-        for f in content["files"]:
-            rel_f = f"{d}/{f}" if d else f
+    if "" in tree:
+        for f in tree[""]["files"]:
+            rel_f = f
             abs_p = data_dir / rel_f
             with open(abs_p, "rb") as fp:
                 data = fp.read()
@@ -159,7 +169,42 @@ def build_fat12(out_path="fat12.img", data_dir=None, files_subset=None):
             file_clusters[rel_f] = cur_cluster
             num_c = max(1, (sz + csize - 1) // csize)
             is_del = rel_f in DELETED_TARGETS or (files_subset is not None and not rel_f.endswith((".png", ".ppt", ".doc")))
+            if is_del and num_c > 1:
+                seg1_c = max(1, num_c // 2)
+                p1_sz = seg1_c * csize
+                off1 = (data_lba + (cur_cluster - 2) * spc) * bps
+                disk[off1:off1 + min(sz, p1_sz)] = data[:p1_sz]
+                gap_c = 4
+                gap_off = (data_lba + (cur_cluster + seg1_c - 2) * spc) * bps
+                disk[gap_off:gap_off + min(len(decoy_data), gap_c * csize)] = decoy_data[:gap_c * csize]
+                c2 = cur_cluster + seg1_c + gap_c
+                off2 = (data_lba + (c2 - 2) * spc) * bps
+                disk[off2:off2 + len(data[p1_sz:])] = data[p1_sz:]
+                cur_cluster = c2 + (num_c - seg1_c) + 2
+            else:
+                off = (data_lba + (cur_cluster - 2) * spc) * bps
+                disk[off:off + sz] = data
+                cur_cluster += num_c
 
+    dir_clusters = {}
+    for d in sorted(tree.keys()):
+        if d != "":
+            dir_clusters[d] = cur_cluster
+            cur_cluster += 1
+
+    for d in sorted(tree.keys()):
+        if d == "":
+            continue
+        for f in tree[d]["files"]:
+            rel_f = f"{d}/{f}"
+            abs_p = data_dir / rel_f
+            with open(abs_p, "rb") as fp:
+                data = fp.read()
+            sz = len(data)
+            file_sizes[rel_f] = sz
+            file_clusters[rel_f] = cur_cluster
+            num_c = max(1, (sz + csize - 1) // csize)
+            is_del = rel_f in DELETED_TARGETS or (files_subset is not None and not rel_f.endswith((".png", ".ppt", ".doc")))
             if is_del and num_c > 1:
                 seg1_c = max(1, num_c // 2)
                 p1_sz = seg1_c * csize
@@ -215,7 +260,7 @@ def build_fat16(out_path="fat16.img", data_dir=None, files_subset=None):
     data_lba = rdet_lba + rdet_sec
 
     disk = bytearray(total_size)
-    disk[510:512] = b"\x55\xaa"
+    disk[0:3] = b"\xeb\x3c\x90"
     disk[3:11] = b"MSDOS5.0"
     struct.pack_into("<H", disk, 0x0B, bps)
     disk[0x0D] = spc
@@ -223,8 +268,17 @@ def build_fat16(out_path="fat16.img", data_dir=None, files_subset=None):
     disk[0x10] = fats
     struct.pack_into("<H", disk, 0x11, entries)
     struct.pack_into("<I", disk, 0x20, total_size // bps)
+    disk[0x15] = 0xF8
     struct.pack_into("<H", disk, 0x16, spf)
+    struct.pack_into("<H", disk, 0x18, 63)
+    struct.pack_into("<H", disk, 0x1A, 255)
+    struct.pack_into("<I", disk, 0x1C, 0)
+    disk[0x24] = 0x80
+    disk[0x26] = 0x29
+    struct.pack_into("<I", disk, 0x27, 0x23456789)
+    disk[0x2B:0x36] = b"FAT16_VOL  "
     disk[0x36:0x3E] = b"FAT16   "
+    disk[510:512] = b"\x55\xaa"
 
     fat1_off = res * bps
     fat2_off = (res + spf) * bps
@@ -277,7 +331,7 @@ def build_fat16(out_path="fat16.img", data_dir=None, files_subset=None):
 
                     while pos_a < nca or pos_b < ncb:
                         if pos_a < nca:
-                            take_a = min(2, nca - pos_a)
+                            take_a = min(16, nca - pos_a)
                             if first_a is None:
                                 first_a = cur_cluster
                             chunk_a = da[pos_a * csize:(pos_a + take_a) * csize]
@@ -287,7 +341,7 @@ def build_fat16(out_path="fat16.img", data_dir=None, files_subset=None):
                             pos_a += take_a
 
                         if pos_b < ncb:
-                            take_b = min(2, ncb - pos_b)
+                            take_b = min(16, ncb - pos_b)
                             if first_b is None:
                                 first_b = cur_cluster
                             chunk_b = db[pos_b * csize:(pos_b + take_b) * csize]
@@ -367,16 +421,35 @@ def build_fat32(out_path="fat32.img", data_dir=None, files_subset=None):
     data_lba = res + fats * spf
 
     disk = bytearray(total_size)
-    disk[510:512] = b"\x55\xaa"
+    disk[0:3] = b"\xeb\x58\x90"
     disk[3:11] = b"MSDOS5.0"
     struct.pack_into("<H", disk, 0x0B, bps)
     disk[0x0D] = spc
     struct.pack_into("<H", disk, 0x0E, res)
     disk[0x10] = fats
+    disk[0x15] = 0xF8
+    struct.pack_into("<H", disk, 0x18, 63)
+    struct.pack_into("<H", disk, 0x1A, 255)
+    struct.pack_into("<I", disk, 0x1C, 0)
     struct.pack_into("<I", disk, 0x20, total_size // bps)
     struct.pack_into("<I", disk, 0x24, spf)
     struct.pack_into("<I", disk, 0x2C, root)
+    struct.pack_into("<H", disk, 0x30, 1)
+    struct.pack_into("<H", disk, 0x32, 6)
+    disk[0x40] = 0x80
+    disk[0x42] = 0x29
+    struct.pack_into("<I", disk, 0x43, 0x3456789A)
+    disk[0x47:0x52] = b"FAT32_VOL  "
     disk[0x52:0x5A] = b"FAT32   "
+    disk[510:512] = b"\x55\xaa"
+
+    struct.pack_into("<I", disk, 512 + 0, 0x41615252)
+    struct.pack_into("<I", disk, 512 + 484, 0x61417272)
+    struct.pack_into("<I", disk, 512 + 488, 0xFFFFFFFF)
+    struct.pack_into("<I", disk, 512 + 492, 0xFFFFFFFF)
+    disk[512 + 510:512 + 512] = b"\x55\xaa"
+
+    disk[6 * 512:7 * 512] = disk[0:512]
 
     fat1_off = res * bps
     fat2_off = (res + spf) * bps
@@ -628,11 +701,23 @@ def build_ntfs(out_path="ntfs.img", data_dir=None, files_subset=None):
     data_dir = Path(data_dir).resolve()
     total_size = 35 * 1024 * 1024
     disk = bytearray(total_size)
-    disk[510:512] = b"\x55\xaa"
+    disk[0:3] = b"\xeb\x52\x90"
     disk[3:11] = b"NTFS    "
     struct.pack_into("<H", disk, 0x0B, 512)
     disk[0x0D] = 8
+    disk[0x15] = 0xF8
+    struct.pack_into("<H", disk, 0x18, 63)
+    struct.pack_into("<H", disk, 0x1A, 255)
+    struct.pack_into("<I", disk, 0x1C, 0)
+    struct.pack_into("<Q", disk, 0x28, total_size // 512 - 1)
     struct.pack_into("<q", disk, 0x30, 2000)
+    struct.pack_into("<q", disk, 0x38, 2004)
+    disk[0x40] = 0xF6
+    disk[0x44] = 1
+    struct.pack_into("<Q", disk, 0x48, 0x0123456789ABCDEF)
+    disk[510:512] = b"\x55\xaa"
+    last_sec_off = (total_size // 512 - 1) * 512
+    disk[last_sec_off:last_sec_off + 512] = disk[0:512]
 
     bps = 512
     spc = 8
@@ -744,6 +829,7 @@ def build_disk(out_path="disk.img", data_dir=None):
     disk = bytearray(total_size)
 
     disk[0:2] = b"\xeb\xfe"
+    struct.pack_into("<I", disk, 0x1B8, 0xA1B2C3D4)
     disk[510:512] = b"\x55\xaa"
 
     parts_info = [
@@ -755,20 +841,27 @@ def build_disk(out_path="disk.img", data_dir=None):
 
     for offset, status, ptype, start_lba, num_sec in parts_info:
         disk[offset] = status
+        disk[offset + 1:offset + 4] = lba_to_chs(start_lba)
         disk[offset + 4] = ptype
+        disk[offset + 5:offset + 8] = lba_to_chs(start_lba + num_sec - 1)
         struct.pack_into("<I", disk, offset + 8, start_lba)
         struct.pack_into("<I", disk, offset + 12, num_sec)
 
     p1_off = p1_lba * 512
+    struct.pack_into("<I", f12_bytes, 0x1C, p1_lba)
     disk[p1_off:p1_off + len(f12_bytes)] = f12_bytes
 
     p2_off = p2_lba * 512
+    struct.pack_into("<I", f16_bytes, 0x1C, p2_lba)
     disk[p2_off:p2_off + len(f16_bytes)] = f16_bytes
 
     p3_off = p3_lba * 512
+    struct.pack_into("<I", f32_bytes, 0x1C, p3_lba)
+    struct.pack_into("<I", f32_bytes, 6 * 512 + 0x1C, p3_lba)
     disk[p3_off:p3_off + len(f32_bytes)] = f32_bytes
 
     p4_off = p4_lba * 512
+    struct.pack_into("<I", ntfs_bytes, 0x1C, p4_lba)
     disk[p4_off:p4_off + len(ntfs_bytes)] = ntfs_bytes
 
     with open(out_path, "wb") as f:

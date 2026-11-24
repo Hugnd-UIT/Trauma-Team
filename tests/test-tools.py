@@ -78,6 +78,12 @@ class TestTools(unittest.TestCase):
         c_ok, _ = file_valid.validate(valid_c, "c")
         self.assertTrue(c_ok)
 
+        cpp_code = b"namespace Trauma { class Worker { public: int id; }; }"
+        c_with_cpp_ok, _ = file_valid.validate(cpp_code, "c")
+        self.assertFalse(c_with_cpp_ok)
+        cpp_ok, _ = file_valid.validate(cpp_code, "cpp")
+        self.assertTrue(cpp_ok)
+
     def test_file_export_payload_and_hash(self):
         test_payload = b"int main() { return 0; }\n" + b"\x00" * 200
         target_size = 25
