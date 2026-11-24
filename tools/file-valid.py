@@ -398,16 +398,27 @@ def execute(disk, info, args, default_lang="c", target_size=None, needed=None, f
     if not chain:
         return "Error: chain parameter is empty."
     lang = args.get("lang") or default_lang
+    norm_lang = lang.lower().lstrip(".")
     data_lba = info.get("data_lba", 0)
     spc = info.get("spc", 1)
     bps = info.get("bps", 512)
     c_repr = f"[{chain[0]}..{chain[-1]}] {len(chain)} clusters" if len(chain) > 40 else str(chain)
+    is_binary_format = norm_lang in ("zip", "docx", "xlsx", "pptx", "png", "jpg", "jpeg", "pdf", "ole")
     parts = []
     for i, c in enumerate(chain):
         c_bytes = disk.cluster(c, data_lba, spc, bps)
         is_last = (needed is not None and len(chain) == needed and i == len(chain) - 1)
         if not is_last and len(c_bytes.rstrip(b"\x00")) < 64:
             return f"Chain {c_repr} is INVALID for {lang}. Cluster {c} is truncated or zeroed out."
+        if is_binary_format:
+            stripped = c_bytes.rstrip(b"\x00")
+            if not is_last and (needed is None or len(chain) < needed or i < len(chain) - 1):
+                if len(stripped) < len(c_bytes) - 512:
+                    return f"Chain {c_repr} is INVALID for {lang}. Cluster {c} has trailing null padding and is not a full cluster."
+            if len(stripped) >= 64:
+                non_ascii = sum(1 for b in stripped if b > 126 or (b < 32 and b not in (9, 10, 13)))
+                if non_ascii == 0 and not any(sig in c_bytes for sig in (b"PK\x03\x04", b"PK\x01\x02", b"PK\x05\x06", b"\x89PNG", b"\xFF\xD8", b"%PDF")):
+                    return f"Chain {c_repr} is INVALID for {lang}. Cluster {c} is plain ASCII text, not binary."
         parts.append(c_bytes)
     payload = b"".join(parts)
     if target_size:
@@ -419,7 +430,6 @@ def execute(disk, info, args, default_lang="c", target_size=None, needed=None, f
             return f"Chain {c_repr} is VALID for {lang}. Complete file 100%."
         return f"Chain {c_repr} is INVALID for {lang}. Error: {err}"
 
-    norm_lang = lang.lower().lstrip(".")
     if norm_lang in ("zip", "docx", "xlsx", "pptx"):
         ok, err = validate_zip_stream(payload)
         if not ok:
@@ -430,6 +440,26 @@ def execute(disk, info, args, default_lang="c", target_size=None, needed=None, f
         text_stream = payload.decode("utf-8", errors="ignore")
         if norm_lang == "c" and re.search(r"\b(class\s+\w+|namespace\s+\w+|<iostream>|<vector>|std::)\b", text_stream):
             return f"Chain {c_repr} is INVALID for {lang}. C++ syntax detected in C source."
+
+        # Verify syntactic continuity across statements
+        clean_code = re.sub(r"//.*|/\*.*?\*/", " ", text_stream, flags=re.DOTALL)
+        clean_code = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', " ", clean_code)
+        tokens = re.findall(r"[a-zA-Z_]\w*|[^\s\w]", clean_code)
+        qualifiers = {
+            "const", "static", "unsigned", "signed", "long", "short",
+            "inline", "virtual", "friend", "extern", "register",
+            "volatile", "mutable", "constexpr", "template", "typename",
+            "case", "goto", "sizeof"
+        }
+        starters = {
+            "int", "void", "char", "float", "double", "bool",
+            "class", "struct", "namespace", "return", "if", "for", "while", "switch"
+        }
+        for idx in range(len(tokens) - 1):
+            t1, t2 = tokens[idx], tokens[idx + 1]
+            if re.match(r"^[a-zA-Z_]\w*$", t1) and re.match(r"^[a-zA-Z_]\w*$", t2):
+                if t2 in starters and t1 not in qualifiers:
+                    return f"Chain {c_repr} is INVALID for {lang}. Syntax error at statement boundary: '{t1} {t2}' missing delimiter."
         ok, err = check_brackets(text_stream)
         if not ok and err and "Unmatched" in err:
             return f"Chain {c_repr} is INVALID for {lang}. Rogue closing bracket: {err}"

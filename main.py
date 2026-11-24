@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import time
 import json
@@ -168,10 +169,19 @@ def recover_fat_multi(disk, item, info, bot, log):
                 data = json.loads(clean_resp)
                 if isinstance(data, dict):
                     thought = data.get("thought", "")
-                    tool = data.get("tool", "")
+                    tool = data.get("tool") or data.get("action") or ""
                     args = data.get("args", {})
             except Exception:
                 pass
+
+            if not tool:
+                m_act = re.search(r"Action:\s*([a-zA-Z_]+)\s*:\s*(\{.*\})", clean_resp, re.DOTALL)
+                if m_act:
+                    tool = m_act.group(1).strip()
+                    try:
+                        args = json.loads(m_act.group(2).strip())
+                    except Exception:
+                        pass
 
             if not tool and "{" in clean_resp and "}" in clean_resp:
                 try:
@@ -180,14 +190,24 @@ def recover_fat_multi(disk, item, info, bot, log):
                     data = json.loads(clean_resp[s_idx:e_idx])
                     if isinstance(data, dict):
                         thought = data.get("thought", "")
-                        tool = data.get("tool", "")
+                        tool = data.get("tool") or data.get("action") or ""
                         args = data.get("args", {})
+                        if not tool:
+                            for tk in ("disk_read", "hex_search", "file_valid", "file_export", "file_read"):
+                                if tk in data and isinstance(data[tk], dict):
+                                    tool = tk
+                                    args = data[tk]
+                                    break
+                        if not tool and "chain" in data:
+                            tool = "file_valid"
+                            args = data
                 except Exception:
                     pass
 
         if not tool:
             tool = "hex_search"
             args = {"cluster": chain[-1], "radius": 50}
+            text_response = json.dumps({"thought": "Scanning candidate clusters", "tool": tool, "args": args})
 
         action_key = f"{tool}:{json.dumps(args, sort_keys=True)}"
         recent_actions.append(action_key)
@@ -224,12 +244,20 @@ def recover_fat_multi(disk, item, info, bot, log):
             obs = file_valid.execute(disk, info, args, default_lang=tool_lang, target_size=size, needed=needed, fallback_chain=chain)
             if " is VALID" in obs and "INVALID" not in obs:
                 chain_arg = file_valid.parse_chain(args, fallback_chain=chain)
-                if isinstance(chain_arg, list) and len(chain_arg) > len(chain):
-                    if chain_arg[:len(chain)] == chain or (chain and chain_arg[0] == chain[0]):
+                if isinstance(chain_arg, list) and chain_arg and (not chain or chain_arg[0] == chain[0]):
+                    if len(chain_arg) > len(chain):
+                        if chain_arg[:len(chain)] == chain or (chain and chain_arg[0] == chain[0]):
+                            chain = list(chain_arg)
+                            lang = tool_lang
+                            c_disp = f"{format_chain_disp(chain)} total={len(chain)}/{needed}" if len(chain) > 40 else str(chain)
+                            log.info(f"Observation: Cluster confirmed, chain updated -> {c_disp}")
+                    elif len(chain_arg) < len(chain):
+                        old_len = len(chain)
                         chain = list(chain_arg)
                         lang = tool_lang
                         c_disp = f"{format_chain_disp(chain)} total={len(chain)}/{needed}" if len(chain) > 40 else str(chain)
-                        log.info(f"Observation: Cluster confirmed, chain updated -> {c_disp}")
+                        log.info(f"Observation: Chain backtracked from {old_len} clusters to {c_disp}")
+                        obs += f"\nBacktrack confirmed: chain restored to {c_disp}. Continue searching from this checkpoint."
             else:
                 c_disp = f"{format_chain_disp(chain)} total={len(chain)}/{needed}" if len(chain) > 40 else str(chain)
                 log.info(f"Observation: Cluster rejected or invalid. Current chain remains: {c_disp}")
