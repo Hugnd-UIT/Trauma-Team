@@ -11,11 +11,19 @@ TOOLS:
    - radius: <integer>: Search radius, default 50.
    - pattern: <string>: Specific text token or pattern to search.
 
-3. file_valid: Validate content syntax and structural balance of the cluster chain.
+3. file_read: Inspect content of assembled cluster segments.
+   - chain: <array of integers or ranges>: Cluster list like [114, 115] or cluster ranges like [[114, 701]].
+   - mode: <string>: Read mode like tail, head, range. Default tail.
+   - count: <integer>: Number of clusters to read, default 1.
+   - start_cluster: <integer>: Starting cluster when mode is range.
+   - end_cluster: <integer>: Ending cluster when mode is range.
+   - lang: <string>: Target file language like c, py, pptx.
+
+4. file_valid: Validate content syntax and structural balance of the cluster chain.
    - chain: <array of integers or ranges>: Cluster list like [114, 115] or cluster ranges like [[114, 701]] or [[114, 1322], [1324, 2532]].
    - lang: <string>: Target file language like pptx, py, c.
 
-4. file_export: Persist verified file payload and compute SHA-256 checksum.
+5. file_export: Persist verified file payload and compute SHA-256 checksum.
    - chain: <array of integers or ranges>: Complete cluster list or cluster ranges like [[114, 1322], [1324, 2532]].
    - name: <string>: Recovered file name.
    - size: <integer>: Exact byte length of the deleted file.
@@ -24,15 +32,16 @@ WORKFLOW:
 - Step 1: Inspect deleted file metadata.
 - Step 2: Call hex_search to discover candidate clusters.
 - Step 3: Call disk_read to inspect candidate cluster bytes and evaluate code continuity.
-- Step 4: Call file_valid to test AST and bracket balance across the reconstructed chain.
-- Step 5: If validation fails, backtrack to the previous valid cluster and test alternative candidates.
-- Step 6: When the full file byte length is reached and validated, call file_export to save the recovered file.
+- Step 4: Call file_read to inspect the current file.
+- Step 5: Call file_valid to test AST and bracket balance across the reconstructed chain.
+- Step 6: If validation fails, backtrack to the previous valid cluster and test alternative candidates.
+- Step 7: When the full file byte length is reached and validated, call file_export to save the recovered file.
 
 OUTPUT:
 Every turn, you MUST output a single valid JSON object without surrounding prose:
 {
   "thought": "<reasoning>",
-  "tool": "<disk_read | hex_search | file_valid | file_export>",
+  "tool": "<disk_read | hex_search | file_read | file_valid | file_export>",
   "args": { <parameters> }
 }
 
@@ -94,6 +103,33 @@ SCHEMA = [
                     "cluster": {"type": "integer"},
                     "radius": {"type": "integer"},
                     "pattern": {"type": "string"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "file_read",
+            "description": "Read assembled cluster segments",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chain": {
+                        "type": "array",
+                        "description": "Cluster list or ranges like [[114, 701]]"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "description": "tail, head, or range"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of clusters to read, default 1"
+                    },
+                    "start_cluster": {"type": "integer"},
+                    "end_cluster": {"type": "integer"},
+                    "lang": {"type": "string"}
                 }
             }
         }

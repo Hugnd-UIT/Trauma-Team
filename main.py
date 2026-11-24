@@ -11,6 +11,7 @@ disk_read = importlib.import_module("tools.disk-read")
 hex_dump = importlib.import_module("tools.hex-dump")
 hex_search = importlib.import_module("tools.hex-search")
 file_valid = importlib.import_module("tools.file-valid")
+file_read = importlib.import_module("tools.file-read")
 file_export = importlib.import_module("tools.file-export")
 detect = importlib.import_module("src.detect")
 build = importlib.import_module("src.build")
@@ -233,6 +234,10 @@ def recover_fat_multi(disk, item, info, bot, log):
                 c_disp = f"{format_chain_disp(chain)} total={len(chain)}/{needed}" if len(chain) > 40 else str(chain)
                 log.info(f"Observation: Cluster rejected or invalid. Current chain remains: {c_disp}")
                 obs += f"\nCandidate cluster rejected. Chain remains {c_disp}. Please inspect other clusters."
+        
+        elif tool in ["file_read", "read_file"]:
+            tool_lang = args.get("lang") or lang
+            obs = file_read.execute(disk, info, args, target_size=size, fallback_chain=chain, lang=tool_lang)
         
         elif tool in ["file_export", "export_file", "export", "save"]:
             chain_arg = file_valid.parse_chain(args, fallback_chain=chain)

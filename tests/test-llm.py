@@ -22,7 +22,7 @@ class TestLLM(unittest.TestCase):
         self.assertTrue(len(prompt.USER) > 0)
         self.assertTrue(len(prompt.COMPACT) > 0)
         self.assertIsInstance(prompt.SCHEMA, list)
-        self.assertEqual(len(prompt.SCHEMA), 4)
+        self.assertEqual(len(prompt.SCHEMA), 5)
 
         self.assertNotIn("(", prompt.SYSTEM)
         self.assertNotIn(")", prompt.SYSTEM)

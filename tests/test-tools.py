@@ -15,6 +15,7 @@ if project_root not in sys.path:
 disk_read = importlib.import_module("tools.disk-read")
 hex_search = importlib.import_module("tools.hex-search")
 file_valid = importlib.import_module("tools.file-valid")
+file_read = importlib.import_module("tools.file-read")
 file_export = importlib.import_module("tools.file-export")
 
 
@@ -124,6 +125,24 @@ class TestTools(unittest.TestCase):
         struct.pack_into("<H", ole_bytes, 0x1E, 9)
         ok_ole, _ = file_valid.validate_ole(bytes(ole_bytes))
         self.assertTrue(ok_ole)
+
+    def test_file_read_execution(self):
+        disk = disk_read.Disk(self.dummy_disk_path)
+        info = {"data_lba": 0, "spc": 1, "bps": 512}
+
+        res_tail = file_read.execute(disk, info, {"chain": [2], "mode": "tail", "count": 1})
+        self.assertIn("File content of clusters [2]", res_tail)
+
+        res_head = file_read.execute(disk, info, {"chain": [2, 3], "mode": "head", "count": 1})
+        self.assertIn("File content of clusters [2]", res_head)
+
+        res_range = file_read.execute(disk, info, {"chain": [2, 3, 4], "mode": "range", "start_cluster": 2, "end_cluster": 3})
+        self.assertIn("File content of clusters [2, 3]", res_range)
+
+        res_err = file_read.execute(disk, info, {"chain": []})
+        self.assertIn("Error: chain is empty", res_err)
+
+        disk.close()
 
 
 if __name__ == "__main__":
